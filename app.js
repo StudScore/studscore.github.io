@@ -67,8 +67,8 @@ function render(owned){
   const el=document.getElementById('board');
   if(!list.length){el.innerHTML='<p class="muted">No recognized sets yet. Upload a Rebrickable set list CSV or paste set numbers.</p>';return;}
   const got=ach.filter(a=>a.unlocked), score=got.reduce((s,a)=>s+a.g,0), max=ach.reduce((s,a)=>s+a.g,0);
-  const tile=a=>`<div class="tile ${a.unlocked?'':'locked'}"><div class="icon">${a.icon}</div><div class="body"><div class="row"><b>${a.title}</b><span class="g">${a.g}G</span></div><div class="muted">${a.desc}</div>${a.winner?`<div class="win">${a.winner}</div>`:''}${!a.unlocked&&a.goal?`<div class="bar"><div style="width:${100*a.progress/a.goal}%"></div></div><div class="muted small">${a.progress.toLocaleString()} / ${a.goal.toLocaleString()}</div>`:''}</div></div>`;
-  el.innerHTML=`<div class="banner"><div><div class="big">${score}G</div><div class="muted">of ${max}G · ${got.length}/${ach.length} unlocked</div></div><div class="stats"><div><b>${list.length}</b> sets</div><div><b>${pieces.toLocaleString()}</b> pieces</div><div><b>${Object.keys(themeCount).length}</b> themes</div></div></div><div class="bar main"><div style="width:${100*score/max}%"></div></div><h3>Unlocked</h3><div class="grid">${got.map(tile).join('')}</div><h3>Locked</h3><div class="grid">${ach.filter(a=>!a.unlocked).map(tile).join('')}</div><div id="mysets"></div>`;
+  const tile=a=>`<div class="tile ${a.unlocked?'':'locked'}"><div class="icon">${a.icon}</div><div class="body"><div class="row"><b>${a.title}</b><span class="g">${a.g}S</span></div><div class="muted">${a.desc}</div>${a.winner?`<div class="win">${a.winner}</div>`:''}${!a.unlocked&&a.goal?`<div class="bar"><div style="width:${100*a.progress/a.goal}%"></div></div><div class="muted small">${a.progress.toLocaleString()} / ${a.goal.toLocaleString()}</div>`:''}</div></div>`;
+  el.innerHTML=`<div class="banner"><div><div class="big">${score}S</div><div class="muted">of ${max}S · ${got.length}/${ach.length} unlocked</div></div><div class="stats"><div><b>${list.length}</b> sets</div><div><b>${pieces.toLocaleString()}</b> pieces</div><div><b>${Object.keys(themeCount).length}</b> themes</div></div></div><div class="bar main"><div style="width:${100*score/max}%"></div></div><h3>Unlocked</h3><div class="grid">${got.map(tile).join('')}</div><h3>Locked</h3><div class="grid">${ach.filter(a=>!a.unlocked).map(tile).join('')}</div><div id="mysets"></div>`;
   renderSets(list);
 }
 
@@ -78,11 +78,11 @@ function render(owned){
 .setctl select{background:#222;color:#eee;border:1px solid #333;border-radius:6px;padding:6px}
 .sets{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
 .setcard{display:block;cursor:pointer;background:#1c1c1c;border-radius:8px;overflow:hidden;color:#eee;text-decoration:none}
-.setcard:hover{outline:2px solid #5dc21e}
+.setcard:hover{outline:2px solid #A5CA18}
 .setimg{width:100%;aspect-ratio:4/3;object-fit:contain;background:#fff;display:block}
 .setph{width:100%;aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;background:#2a2a2a;font-size:36px}
 .setinfo{padding:8px;font-size:13px}.setinfo b{display:block;font-size:14px;line-height:1.2;margin-bottom:3px}
-.setgroup{grid-column:1/-1;color:#5dc21e;font-weight:700;margin-top:6px}`;document.head.appendChild(st);})();
+.setgroup{grid-column:1/-1;color:#A5CA18;font-weight:700;margin-top:6px}`;document.head.appendChild(st);})();
 const esc=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let setSort='theme', setShowAll=false;
 function setTheme(k){const t=THEMES[SETS[k][2]];return t?tName(t[0]):'Unknown';}
@@ -115,10 +115,10 @@ function renderSets(list){
 .modal .mimg{width:100%;max-height:300px;object-fit:contain;background:#fff;display:block}
 .modal .mbody{padding:16px}.modal h2{margin:0 0 4px;font-size:20px}
 .modal .meta{display:flex;flex-wrap:wrap;gap:6px 14px;color:#aaa;font-size:13px;margin-bottom:10px}
-.modal h4{margin:14px 0 4px;color:#5dc21e}.modal p{margin:4px 0;line-height:1.45}
+.modal h4{margin:14px 0 4px;color:#A5CA18}.modal p{margin:4px 0;line-height:1.45}
 .modal .chips{display:flex;flex-wrap:wrap;gap:6px}.modal .chip{background:#2a2a2a;border-radius:12px;padding:3px 10px;font-size:13px}
 .modal .mclose{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.6);border-radius:50%;width:34px;height:34px;padding:0;margin:0;font-size:18px}
-.modal a.btn{display:inline-block;background:#107c10;color:#fff;text-decoration:none;padding:8px 14px;border-radius:6px;margin-top:14px}`;document.head.appendChild(st);})();
+.modal a.btn{display:inline-block;background:#A5CA18;color:#111;font-weight:700;text-decoration:none;padding:8px 14px;border-radius:6px;margin-top:14px}`;document.head.appendChild(st);})();
 function findLore(themeId){
   if(typeof LORE==='undefined'||!LORE||!LORE.themes)return null;
   let id=themeId,n=0;
