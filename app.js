@@ -68,7 +68,43 @@ function render(owned){
   if(!list.length){el.innerHTML='<p class="muted">No recognized sets yet. Upload a Rebrickable set list CSV or paste set numbers.</p>';return;}
   const got=ach.filter(a=>a.unlocked), score=got.reduce((s,a)=>s+a.g,0), max=ach.reduce((s,a)=>s+a.g,0);
   const tile=a=>`<div class="tile ${a.unlocked?'':'locked'}"><div class="icon">${a.icon}</div><div class="body"><div class="row"><b>${a.title}</b><span class="g">${a.g}G</span></div><div class="muted">${a.desc}</div>${a.winner?`<div class="win">${a.winner}</div>`:''}${!a.unlocked&&a.goal?`<div class="bar"><div style="width:${100*a.progress/a.goal}%"></div></div><div class="muted small">${a.progress.toLocaleString()} / ${a.goal.toLocaleString()}</div>`:''}</div></div>`;
-  el.innerHTML=`<div class="banner"><div><div class="big">${score}G</div><div class="muted">of ${max}G · ${got.length}/${ach.length} unlocked</div></div><div class="stats"><div><b>${list.length}</b> sets</div><div><b>${pieces.toLocaleString()}</b> pieces</div><div><b>${Object.keys(themeCount).length}</b> themes</div></div></div><div class="bar main"><div style="width:${100*score/max}%"></div></div><h3>Unlocked</h3><div class="grid">${got.map(tile).join('')}</div><h3>Locked</h3><div class="grid">${ach.filter(a=>!a.unlocked).map(tile).join('')}</div>`;
+  el.innerHTML=`<div class="banner"><div><div class="big">${score}G</div><div class="muted">of ${max}G · ${got.length}/${ach.length} unlocked</div></div><div class="stats"><div><b>${list.length}</b> sets</div><div><b>${pieces.toLocaleString()}</b> pieces</div><div><b>${Object.keys(themeCount).length}</b> themes</div></div></div><div class="bar main"><div style="width:${100*score/max}%"></div></div><h3>Unlocked</h3><div class="grid">${got.map(tile).join('')}</div><h3>Locked</h3><div class="grid">${ach.filter(a=>!a.unlocked).map(tile).join('')}</div><div id="mysets"></div>`;
+  renderSets(list);
+}
+
+// ---- My Sets ----
+(function(){const st=document.createElement('style');st.textContent=`
+.setctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.setctl select{background:#222;color:#eee;border:1px solid #333;border-radius:6px;padding:6px}
+.sets{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+.setcard{display:block;background:#1c1c1c;border-radius:8px;overflow:hidden;color:#eee;text-decoration:none}
+.setcard:hover{outline:2px solid #5dc21e}
+.setimg{width:100%;aspect-ratio:4/3;object-fit:contain;background:#fff;display:block}
+.setph{width:100%;aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;background:#2a2a2a;font-size:36px}
+.setinfo{padding:8px;font-size:13px}.setinfo b{display:block;font-size:14px;line-height:1.2;margin-bottom:3px}
+.setgroup{grid-column:1/-1;color:#5dc21e;font-weight:700;margin-top:6px}`;document.head.appendChild(st);})();
+const esc=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let setSort='theme', setShowAll=false;
+function setTheme(k){const t=THEMES[SETS[k][2]];return t?tName(t[0]):'Unknown';}
+function renderSets(list){
+  const el=document.getElementById('mysets');if(!el)return;
+  const rows=list.map(s=>({...s,sub:setTheme(s.num)}));
+  const cmp={theme:(a,b)=>a.sub.localeCompare(b.sub)||a.year-b.year||a.num.localeCompare(b.num,undefined,{numeric:true}),
+    year_old:(a,b)=>a.year-b.year||a.sub.localeCompare(b.sub),year_new:(a,b)=>b.year-a.year||a.sub.localeCompare(b.sub),
+    pieces:(a,b)=>b.parts-a.parts};
+  rows.sort(cmp[setSort]);
+  const LIMIT=30, shown=setShowAll?rows:rows.slice(0,LIMIT);
+  let html='',last=null;
+  for(const s of shown){
+    if(setSort==='theme'&&s.sub!==last){html+=`<div class="setgroup">${esc(s.sub)}</div>`;last=s.sub;}
+    const n=encodeURIComponent(s.num);
+    html+=`<a class="setcard" href="https://rebrickable.com/sets/${n}/" target="_blank" rel="noopener"><img class="setimg" loading="lazy" alt="${esc(s.name)}" src="https://cdn.rebrickable.com/media/sets/${n}.jpg" onerror="this.outerHTML='<div class=&quot;setph&quot;>🧱</div>'"><div class="setinfo"><b>${esc(s.name)}</b>${esc(s.num.replace(/-1$/,''))} · ${s.year}<br><span class="muted">${esc(s.sub)} · ${s.parts.toLocaleString()} pcs${s.qty>1?' · ×'+s.qty:''}</span></div></a>`;
+  }
+  el.innerHTML=`<h3>My Sets (${rows.length})</h3><div class="setctl"><label class="muted small">Sort by</label><select id="setsort">
+<option value="theme">Theme</option><option value="year_old">Year (oldest first)</option><option value="year_new">Year (newest first)</option><option value="pieces">Piece count</option></select></div>
+<div class="sets">${html}</div>${rows.length>LIMIT?`<button id="setmore">${setShowAll?'Show fewer':'Show all '+rows.length+' sets'}</button>`:''}`;
+  const sel=document.getElementById('setsort');sel.value=setSort;sel.onchange=()=>{setSort=sel.value;renderSets(list);};
+  const m=document.getElementById('setmore');if(m)m.onclick=()=>{setShowAll=!setShowAll;renderSets(list);};
 }
 let owned={};
 document.getElementById('file').onchange=e=>{const f=e.target.files[0];if(!f)return;f.text().then(t=>{owned=parseList(t);render(owned);});};
