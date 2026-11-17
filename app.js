@@ -153,6 +153,6 @@ ${loreHtml}<h4>Value</h4><p class="muted">Coming soon</p>
 let owned={};
 document.getElementById('file').onchange=e=>{const f=e.target.files[0];if(!f)return;f.text().then(t=>{owned=parseList(t);render(owned);});};
 document.getElementById('go').onclick=()=>{owned=parseList(document.getElementById('paste').value);render(owned);};
-const SAMPLE="Set Number,Quantity\n11513-1,1\n72159-1,1\n72155-1,1\n8103-1,1\n8101-1,1\n7707-1,1\n7700-1,1\n7706-1,1\n7712-1,1\n7702-1,1\n8114-1,1\n8100-1,1\n8113-1,1\n7708-1,1\n8102-1,1\n8105-1,1\n7709-1,1\n7713-1,1\n8104-1,1\n7770-1,1\n7771-1,1\n7772-1,1\n7774-1,1\n7775-1,1\n7773-1,1\n7776-1,1\n77037-1,1\n10375-1,1\n43249-1,1\n76282-1,1\n76249-1,1\n4940-1,1\n72046-1,1\n11373-1,1\n76251-1,1\n75318-1,1\n75308-1,1\n75349-1,1\n75328-1,1\n77093-1,1\n6915-1,1\n7693-1,1\n72151-1,1\n72167-1,1\n72156-1,1\n72165-1,1\n40887-1,1\n7965-1,1\n";
+const SAMPLE="set_num,quantity\n497-1,1\n6080-1,1\n6285-1,1\n6990-1,1\n6399-1,1\n8880-1,1\n7140-1,1\n10030-1,1\n8448-1,1\n10179-1,1\n7094-1,1\n8043-1,1\n10188-1,1\n21103-1,1\n10220-1,1\n70810-1,1\n10256-1,1\n21309-1,1\n75192-1,1\n10264-1,1\n71043-1,1\n10283-1,1\n76240-1,1\n21318-1,1\n42115-1,1\n10294-1,1\n76419-1,1\n10316-1,1\n21333-1,1\n75313-1,1\n";
 document.getElementById('demo').onclick=()=>{owned=parseList(SAMPLE);render(owned);};
 render(owned);
