@@ -126,10 +126,18 @@ function badgeHTML(a){
   }
   return `<div class="icon medal" data-fallback="${fb}"><img src="badges/${a.id}.webp" alt="${esc(a.title)}" loading="lazy" onerror="badgeFallback(this)"></div>`;
 }
+// ---- Collapsible badge sections (open state kept across re-renders) ----
+const BSEC_OPEN={};
+function bsec(k,title,n,def,inner,extra){const open=k in BSEC_OPEN?BSEC_OPEN[k]:def;
+  return `<details class="bsec" data-k="${k}"${open?' open':''}><summary><span>${title} <span class="muted">(${n})</span></span>${extra||''}</summary>${inner}</details>`;}
+let hasData=null;
+function setDataState(on){document.body.classList.toggle('nodata',!on);const ib=document.getElementById('importbox');
+  if(ib&&on!==hasData){ib.open=!on;}hasData=on;}
 function render(owned){
   const S=scores(owned,extras);const {list,ach,pieces,themeCount,fach,bulk}=S;
-  const el=document.getElementById('board');
-  if(!list.length&&!S.figTotal&&!S.partsOwned){el.innerHTML=(extras&&extras.msg)||'<p class="muted">No recognized sets yet. Upload a Rebrickable set list CSV, a BrickLink inventory (CSV or XML), or paste set numbers.</p>';return;}
+  const el=document.getElementById('scoreboard')||document.getElementById('board');
+  if(!list.length&&!S.figTotal&&!S.partsOwned){setDataState(false);el.innerHTML=(extras&&extras.msg)||'<p class="muted">No recognized sets yet. Upload a Rebrickable set list CSV, a BrickLink inventory (CSV or XML), or paste set numbers.</p>';['mysets','myfigs','themeprog'].forEach(i=>{const x=document.getElementById(i);if(x)x.innerHTML='';});return;}
+  setDataState(true);
   const tile=a=>{const m=medal(a),u=a.sys||'SS';return `<div class="tile ${a.unlocked?'':'locked'}" style="border-left-color:${a.unlocked?m.bg:LEGO.dkgray}">${badgeHTML(a)}<div class="body"><div class="row"><b>${a.title}</b><span class="pill" style="background:${m.bg};color:${m.fg}">${a.nopoints?'no points':a.g+' '+u}</span></div><div class="muted">${a.desc}</div>${a.winner?`<div class="win">${esc(a.winner)}</div>`:''}${!a.unlocked&&a.goal?`<div class="bar"><div style="width:${100*a.progress/a.goal}%"></div></div><div class="muted small">${a.progress.toLocaleString()} / ${a.goal.toLocaleString()}</div>`:''}</div></div>`;};
   const block=(sys)=>{const isS=sys==='SS',sc=isS?S.ss:S.fs,mx=isS?S.ssMax:S.fsMax,A=isS?ach:fach,lead=S.lead===sys;
     return `<div class="score ${lead?'lead':'sub'} ${isS?'ss':'fs'}"><div class="lbl">${isS?'StudScore':'FigScore'}</div><div class="big">${sc.toLocaleString()} ${sys}</div><div class="muted">of ${mx.toLocaleString()} ${sys} · ${A.filter(a=>a.unlocked).length}/${A.length} unlocked</div><div class="bar main"><div style="width:${mx?100*sc/mx:0}%"></div></div></div>`;};
@@ -138,9 +146,11 @@ function render(owned){
   const stats=`<div class="stats"><div><b>${list.length}</b> sets</div><div><b>${(pieces||0).toLocaleString()}</b> set pieces</div><div><b>${themeCount?Object.keys(themeCount).length:0}</b> themes</div>${figStat}<div><b>${S.figParts.toLocaleString()}</b> fig parts</div><div><b>${S.partsOwned.toLocaleString()}</b> parts owned</div></div>`;
   const sect=(sys)=>{const A=sys==='SS'?ach:fach,nm=sys==='SS'?'StudScore':'FigScore';
     if(!A.length)return sys==='SS'?'<h3>StudScore</h3><p class="muted">No sets in this upload yet, so no StudScore achievements.</p>':'<h3>FigScore</h3><p class="muted">No minifigs in this upload yet. Sets that include minifigs, or a BrickLink inventory of loose minifigs, will start your FigScore.</p>';
-    return `<h3>${nm} · Unlocked</h3><div class="grid">${A.filter(a=>a.unlocked).map(tile).join('')||'<p class="muted">None yet.</p>'}</div><h3>${nm} · Locked</h3><div class="grid">${A.filter(a=>!a.unlocked).map(tile).join('')||'<p class="muted">All unlocked!</p>'}</div>`;};
+    const U=A.filter(a=>a.unlocked),L=A.filter(a=>!a.unlocked);
+    return bsec(sys+'u',`${nm} · Unlocked`,U.length,true,`<div class="grid">${U.map(tile).join('')||'<p class="muted">None yet.</p>'}</div>`)+bsec(sys+'l',`${nm} · Locked`,L.length,false,`<div class="grid">${L.map(tile).join('')||'<p class="muted">All unlocked!</p>'}</div>`);};
   const note=extras&&extras.note?`<p class="muted small">${extras.note}</p>`:'';
-  el.innerHTML=`${note}<div class="banner"><div class="scores">${block(order[0])}${block(order[1])}</div>${stats}</div>${sect(order[0])}${sect(order[1])}${bulk.length?`<h3>Bulk milestones <span class="pill" style="background:${LEGO.azure};color:${LEGO.black}">no points</span></h3><p class="muted small">Loose parts don't add to your score, but they count here. Only loose minifig parts count as fig parts — the pieces already in complete minifigs, whether those figs came from a set or were imported whole, are not added again. You own ${S.partsOwned.toLocaleString()} parts (${S.looseParts.toLocaleString()} loose + ${S.figParts.toLocaleString()} minifig parts).</p><div class="grid">${bulk.map(tile).join('')}</div>`:''}<div id="mysets"></div><div id="myfigs"></div>`;
+  el.innerHTML=`${note}<div class="banner"><div class="scores">${block(order[0])}${block(order[1])}</div>${stats}</div>${sect(order[0])}${sect(order[1])}${bulk.length?bsec('bulk',`Bulk milestones`,bulk.length,false,`<p class="muted small">Loose parts don't add to your score, but they count here. Only loose minifig parts count as fig parts — the pieces already in complete minifigs, whether those figs came from a set or were imported whole, are not added again. You own ${S.partsOwned.toLocaleString()} parts (${S.looseParts.toLocaleString()} loose + ${S.figParts.toLocaleString()} minifig parts).</p><div class="grid">${bulk.map(tile).join('')}</div>`,`<span class="pill" style="background:${LEGO.azure};color:${LEGO.black}">no points</span>`):''}`;
+  el.querySelectorAll('details.bsec').forEach(d=>d.addEventListener('toggle',()=>{BSEC_OPEN[d.dataset.k]=d.open;}));
   if(list.length)renderSets(list);
   renderFigs();
 }
@@ -164,7 +174,7 @@ function renderFigs(){
   if(!rows.length){el.innerHTML='';return;}
   const LIMIT=30,shown=figShowAll?rows:rows.slice(0,LIMIT);let html='',last=null;
   for(const f of shown){if(f.theme!==last){html+=`<div class="setgroup">${esc(f.theme)}</div>`;last=f.theme;}
-    html+=`<div class="setcard figcard"><img class="setimg" loading="lazy" alt="${esc(f.id)}" src="${figImg(f.id)}" onerror="this.outerHTML='<div class=&quot;setph&quot;>🙂</div>'"><div class="setinfo"><b>${esc(f.name||f.id)}</b>${esc(f.id)}${f.qty>1?' · ×'+f.qty:''}${esc(figFromTxt(f))}${figMetaTxt(f.id)}</div></div>`;}
+    html+=`<div class="setcard figcard"><div class="imgtile"><img class="setimg" loading="lazy" alt="${esc(f.id)}" src="${figImg(f.id)}" onerror="this.outerHTML='<div class=&quot;setph&quot;>🙂</div>'"></div><div class="setinfo"><b>${esc(f.name||f.id)}</b>${esc(f.id)}${f.qty>1?' · ×'+f.qty:''}${esc(figFromTxt(f))}${figMetaTxt(f.id)}</div></div>`;}
   el.innerHTML=`<h3>My Minifigs (${rows.length})</h3><div class="sets">${html}</div>${rows.length>LIMIT?`<button id="figmore">${figShowAll?'Show fewer':'Show all '+rows.length+' minifigs'}</button>`:''}`;
   const m=document.getElementById('figmore');if(m)m.onclick=()=>{figShowAll=!figShowAll;renderFigs();};
 }
@@ -203,8 +213,8 @@ function renderSets(list){
   let html='',last=null;
   for(const s of shown){
     if(setSort==='theme'&&s.sub!==last){html+=`<div class="setgroup">${esc(s.sub)}</div>`;last=s.sub;}
-    const n=encodeURIComponent(s.num);
-    html+=`<div class="setcard" role="button" tabindex="0" data-num="${esc(s.num)}"><img class="setimg" loading="lazy" alt="${esc(s.name)}" src="https://cdn.rebrickable.com/media/sets/${n}.jpg" onerror="this.outerHTML='<div class=&quot;setph&quot;>🧱</div>'"><div class="setinfo"><b>${esc(s.name)}</b>${esc(s.num.replace(/-1$/,''))} · ${s.year}<br><span class="muted">${esc(s.sub)} · ${s.parts.toLocaleString()} pcs${s.qty>1?' · ×'+s.qty:''}</span></div></div>`;
+    const n=encodeURIComponent(s.num),bn=themeBanner(s.num);
+    html+=`<div class="setcard" role="button" tabindex="0" data-num="${esc(s.num)}"><div class="imgtile"><img class="setimg" loading="lazy" alt="${esc(s.name)}" src="https://cdn.rebrickable.com/media/sets/${n}.jpg" onerror="this.outerHTML='<div class=&quot;setph&quot;>🧱</div>'"></div><div class="setinfo ${bn.cls}" data-wm="${esc(bn.wm)}"${bn.style}><b>${esc(s.name)}</b>${esc(s.num.replace(/-1$/,''))} · ${s.year}<br><span class="muted">${esc(s.sub)} · ${s.parts.toLocaleString()} pcs${s.qty>1?' · ×'+s.qty:''}</span></div></div>`;
   }
   el.innerHTML=`<h3>My Sets (${rows.length})</h3><div class="setctl"><label class="muted small">Sort by</label><select id="setsort">
 <option value="theme">Theme</option><option value="year_old">Year (oldest first)</option><option value="year_new">Year (newest first)</option><option value="pieces">Piece count</option></select></div>
@@ -214,6 +224,21 @@ function renderSets(list){
   const m=document.getElementById('setmore');if(m)m.onclick=()=>{setShowAll=!setShowAll;renderSets(list);};
 }
 
+// ---- Theme banners (original CSS/SVG art in index.html, no official logos). Walks the theme chain, most specific first. ----
+const BANNER_RULES=[['marsmission',/mars mission/i],['classicspace',/^classic space$/i],['rockraiders',/rock raiders/i],['aquaraiders',/aqua ?raiders/i],
+ ['starwars',/star wars/i],['ninjago',/ninjago/i],['hp',/harry potter|wizarding world|fantastic beasts/i],['pokemon',/pok[eé]mon/i],
+ ['marvel',/marvel|spider-man|avengers/i],['dc',/\bdc\b|batman|super heroes dc/i],['minecraft',/minecraft/i],['jurassic',/jurassic|dino/i],
+ ['movie',/lego movie/i],['ideas',/ideas|cuusoo/i],['modular',/modular/i],['icons',/^icons$|creator expert|advanced models/i],
+ ['friends',/friends/i],['technic',/technic/i],['castle',/castle|kingdoms|knights|nexo/i],['pirates',/pirates/i],
+ ['town',/^town$|classic town|^city$|city/i],['space',/space|blacktron|futuron|m-tron|ice planet|insectoids|unitron|spyrius|galaxy|exploriens|ufo/i]];
+const BANNER_SHORT={classicspace:'Space',starwars:'Star Wars',hp:'Magic',rockraiders:'Rock Raiders',aquaraiders:'Aqua Raiders',marsmission:'Mars',
+ ideas:'Ideas',icons:'Icons',technic:'Technic',town:'Town',castle:'Castle',pirates:'Pirates',ninjago:'Ninjago',friends:'Friends',pokemon:'Pokémon',
+ marvel:'Marvel',dc:'DC',minecraft:'Minecraft',jurassic:'Jurassic',movie:'Movie',modular:'Modular',space:'Space'};
+function themeChain(tid){const out=[];let id=tid,n=0;while(id!=null&&THEMES[id]&&n<10){out.push(String(THEMES[id][0]));id=THEMES[id][1];n++;}return out;}
+function themeBanner(num){const d=SETS[num];const chain=d?themeChain(d[2]):[];
+  for(const nm of chain)for(const [k,re] of BANNER_RULES)if(re.test(nm))return {cls:'tbanner tb-'+k,wm:BANNER_SHORT[k]||nm,style:''};
+  const nm=chain.length?tName(chain[chain.length-1]):'LEGO';let h=0;for(const c of nm)h=(h*31+c.charCodeAt(0))>>>0;
+  return {cls:'tbanner tb-gen',wm:nm.length>14?nm.split(/\s+/)[0]:nm,style:` style="--tb-h:${h%360}"`};}
 // ---- Set detail popup ----
 (function(){const st=document.createElement('style');st.textContent=`
 .modalbg{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:50;padding:12px}
@@ -249,7 +274,7 @@ function openSet(num){
   const bg=document.createElement('div');bg.className='modalbg';bg.id='setmodal';
   bg.innerHTML=`<div class="modal" role="dialog" aria-modal="true" aria-label="${esc(name)}"><button class="mclose" aria-label="Close">✕</button>
 <img class="mimg" alt="${esc(name)}" src="https://cdn.rebrickable.com/media/sets/${n}.jpg" onerror="this.outerHTML='<div class=&quot;setph&quot;>🧱</div>'">
-<div class="mbody"><h2>${esc(name)}</h2><div class="meta"><span>#${esc(num.replace(/-1$/,''))}</span><span>${year}</span><span>${parts.toLocaleString()} pcs</span><span>${esc(setTheme(num))}</span>${qty>1?`<span>You own ×${qty}</span>`:''}</div>
+${(()=>{const bn=themeBanner(num);return `<div class="tbanner mban ${bn.cls}" data-wm="${esc(bn.wm)}"${bn.style}><div class="mbsub">${esc(setTheme(num))}</div><h2>${esc(name)}</h2></div>`;})()}<div class="mbody"><div class="meta"><span>#${esc(num.replace(/-1$/,''))}</span><span>${year}</span><span>${parts.toLocaleString()} pcs</span><span>${esc(setTheme(num))}</span>${qty>1?`<span>You own ×${qty}</span>`:''}</div>
 ${loreHtml}<h4>Value</h4><p class="muted">Coming soon</p>
 <a class="btn" href="https://rebrickable.com/sets/${n}/" target="_blank" rel="noopener">View on Rebrickable</a></div></div>`;
   bg.onclick=e=>{if(e.target===bg)closeSet();};
@@ -263,3 +288,53 @@ const SAMPLE="set_num,quantity\n497-1,1\n6080-1,1\n6285-1,1\n6990-1,1\n6399-1,1\
 document.getElementById('demo').onclick=()=>{extras=null;try{localStorage.removeItem('brickExtras');}catch(e){}owned=parseList(SAMPLE);render(owned);};
 try{const e=JSON.parse(localStorage.getItem('brickExtras')||'null');if(e)extras=e;}catch(e){}
 render(owned);
+
+// ---- Tabs: Score / Sets / Figs / Value / Share (added by Money) ----
+const TABS=['score','sets','figs','value','share'];
+let curTab=null;
+function showTab(t,opts){opts=opts||{};if(!TABS.includes(t))t='score';
+  const changed=t!==curTab;curTab=t;
+  TABS.forEach(x=>{const b=document.getElementById('tabbtn-'+x),p=document.getElementById('tab-'+x),on=x===t;
+    if(b){b.setAttribute('aria-selected',on?'true':'false');b.tabIndex=on?0:-1;}if(p)p.hidden=!on;});
+  if(opts.focus){const b=document.getElementById('tabbtn-'+t);if(b)b.focus();}
+  if(changed&&!opts.keepScroll)window.scrollTo(0,0);
+  try{const b=document.getElementById('tabbtn-'+t);if(b&&b.scrollIntoView)b.scrollIntoView({block:'nearest',inline:'nearest'});}catch(e){}
+  if(t==='value'&&typeof drawChart==='function'){try{drawChart();}catch(e){}}
+  window.dispatchEvent(new CustomEvent('studscore:tab',{detail:{tab:t}}));
+}
+// Route a hash: a tab name (#sets) or any element id inside a panel (#cx-all) opens that tab
+function routeHash(initial){const h=decodeURIComponent((location.hash||'').slice(1));
+  if(!h||TABS.includes(h)){showTab(h||'score',{keepScroll:initial});return;}
+  const el=document.getElementById(h),p=el&&el.closest('[role=tabpanel]');
+  if(p){showTab(p.id.replace(/^tab-/,''),{keepScroll:true});setTimeout(()=>el.scrollIntoView({block:'start'}),0);}else showTab('score',{keepScroll:initial});}
+function goTab(t){if(location.hash!=='#'+t)location.hash=t;else showTab(t);}
+(function(){const bar=document.getElementById('tabs');if(!bar)return;
+  bar.addEventListener('click',e=>{const b=e.target.closest('[role=tab]');if(b)goTab(b.dataset.tab);});
+  bar.addEventListener('keydown',e=>{const i=TABS.indexOf(curTab);let n=null;
+    if(e.key==='ArrowRight'||e.key==='ArrowDown')n=TABS[(i+1)%TABS.length];else if(e.key==='ArrowLeft'||e.key==='ArrowUp')n=TABS[(i+TABS.length-1)%TABS.length];
+    else if(e.key==='Home')n=TABS[0];else if(e.key==='End')n=TABS[TABS.length-1];
+    if(n){e.preventDefault();goTab(n);document.getElementById('tabbtn-'+n).focus();}});
+  window.addEventListener('hashchange',()=>routeHash(false));
+})();
+// Put dynamically added sections into their tabs. collection.js adds #cx-a (snapshot, theme progress, value history) before #mysets
+// and #cx-b (All my stuff, bulk parts, sources) after #myfigs; share.js adds its button after #demo. Runs after every render.
+function placeSections(){try{
+  const sets=document.getElementById('tab-sets'),val=document.getElementById('tab-value'),tp=document.getElementById('themeprog');
+  const a=document.getElementById('cx-a');if(a&&val&&a.parentNode!==val){a.classList.add('needs-data');val.appendChild(a);}
+  const b=document.getElementById('cx-b');if(b&&sets&&b.parentNode!==sets){b.classList.add('needs-data');sets.appendChild(b);}
+  if(a&&tp){tp.innerHTML='';const h=[...a.querySelectorAll('h3')].find(x=>x.textContent.trim()==='Theme progress');
+    if(h){const wrap=document.createElement('div');wrap.className='cx';let n=h;const mv=[];
+      while(n&&(n===h||(n.tagName==='P'&&n.classList.contains('cx-cap'))||(n.tagName==='DETAILS'&&n.classList.contains('cx-th')))){mv.push(n);n=n.nextElementSibling;}
+      mv.forEach(x=>wrap.appendChild(x));tp.appendChild(wrap);}}
+  const demo=document.getElementById('demo'),sb=document.getElementById('sharebox'),btn=demo&&demo.nextElementSibling;
+  if(sb&&btn&&btn.tagName==='BUTTON'&&/share card/i.test(btn.textContent))sb.appendChild(btn);
+}catch(e){console.error('placeSections',e);}}
+window.addEventListener('DOMContentLoaded',()=>{
+  const _r=render;render=function(){const r=_r.apply(this,arguments);placeSections();return r;};
+  placeSections();routeHash(true);
+});
+
+// ---- Product photos: soft tile behind set/fig pictures so their white backgrounds blend away (CSS in index.html: .imgtile + multiply).
+// Popups (app.js set popup and collection.js fig popup) add <img class="mimg"> straight into .modal, so wrap those as they appear.
+function tilePhotos(root){(root||document).querySelectorAll('.modal > img.mimg').forEach(im=>{const t=document.createElement('div');t.className='imgtile mtile';im.replaceWith(t);t.appendChild(im);});}
+try{new MutationObserver(ms=>{for(const m of ms)for(const n of m.addedNodes)if(n.nodeType===1&&n.querySelector&&n.querySelector('.modal > img.mimg'))tilePhotos(n);}).observe(document.body,{childList:true});}catch(e){}

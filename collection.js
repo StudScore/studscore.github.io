@@ -253,7 +253,7 @@ function snapshotHTML(list,cur){
   let h=`<h2 id="cx-snapshot">Collection snapshot</h2><p class="cx-cap">Your collection as of ${fmtD(today())}, from your upload${META&&META.fmt?' ('+E(META.fmt)+')':''}.</p><div class="cx-tiles">`;
   h+=tile(sets.toLocaleString(),'Sets owned',`${list.length.toLocaleString()} different sets`);
   h+=tile(pcs.toLocaleString(),'Pieces in sets','official counts, Rebrickable');
-  h+=T.n?tile(money(T.v,cur),'Estimated value',`${T.n} of ${list.length} sets valued · ${E(srcText(T.srcs))}${T.other?` · ${T.other} in other currencies not counted`:''}${T.ex?' · EXAMPLE DATA':''}`)
+  h+=T.n?tile(money(T.v,cur),'Estimated value',`${T.n} of ${list.length} sets valued · ${E(srcText(T.srcs))}${T.other?` · ${T.other} in other currencies not counted`:''}${T.ex&&!/example/i.test(srcText(T.srcs))?' · EXAMPLE DATA':''}`)
         :tile('Coming soon','Estimated value','No values yet. Add them from your file or the set popup, or wait for the price feed.');
   if(figs)h+=tile(figs.toLocaleString(),'Minifigs',`${FC.uniq.toLocaleString()} different${FC.inSets?` · ${FC.loose?FC.loose.toLocaleString()+' loose + ':''}${FC.inSets.toLocaleString()} in your sets`:' · loose'}`);
   h+=tile(String(thE.length),'Themes',thE.length?`${E(thE[0][0])} leads with ${thE[0][1].n} set${thE[0][1].n>1?'s':''}`:'');
@@ -330,7 +330,9 @@ function renderValue(){
 }
 function drawChart(){
   const M=LAST&&LAST.M,el=document.getElementById('cx-chart');if(!M||!el)return;
-  const W=Math.max(260,el.clientWidth-12||330);
+  // Hidden (e.g. a tab panel with display:none) -> no width yet: skip the SVG; it draws when the panel is shown (see listeners below)
+  if(!el.clientWidth){el.dataset.pending='1';return;}delete el.dataset.pending;el.dataset.w=el.clientWidth;
+  const W=Math.max(260,el.clientWidth-12);
   el.innerHTML=chartSVG(W,M.series,cxView==='total'?M.ann:[],M.cur,cxSel);
   const svg=el.querySelector('svg');
   if(svg){const pick=e=>{const r=svg.getBoundingClientRect(),t0=+svg.dataset.t0,t1=+svg.dataset.t1,pl=+svg.dataset.pl,pr=+svg.dataset.pr;
@@ -468,7 +470,16 @@ window.StudValue={summary(o){
   const all=[...new Set([...srcs].concat(hSrc&&P.length>=2?[hSrc]:[]))];
   return {total:n?total:null,n,of:keys.length,cur,points:P.map(p=>[p.t,p.total]),change,example,brickOwl:all.some(s=>/brick\s*owl/i.test(s)),srcs:all};
 }};
-let rz;window.addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(drawChart,150);});
+// Redraw the chart at full width when it becomes visible or its width changes: Money's tab switch event, window resize
+// (only while visible), and a ResizeObserver as a backstop for any other show/hide.
+const chartVisible=()=>{const el=document.getElementById('cx-chart');return !!(el&&el.clientWidth);};
+const redrawSoon=()=>requestAnimationFrame(()=>{if(chartVisible())drawChart();});
+window.addEventListener('studscore:tab',e=>{if(e&&e.detail&&e.detail.tab==='value')redrawSoon();});
+let rz;window.addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(()=>{if(chartVisible())drawChart();},150);});
+if(typeof ResizeObserver==='function'){let ro=null,obs=null;const watch=()=>{const el=document.getElementById('cx-chart');if(!el||el===obs)return;
+    if(!ro)ro=new ResizeObserver(()=>{const c=document.getElementById('cx-chart');if(c&&c.clientWidth&&String(c.clientWidth)!==c.dataset.w)drawChart();});
+    if(obs)ro.unobserve(obs);ro.observe(el);obs=el;};
+  const _rv=renderValue;renderValue=function(){_rv.apply(this,arguments);watch();};}
 // price feed hooks
 const useP=j=>{if(j&&typeof j==='object'&&j.sets&&typeof j.sets==='object'){PRICES=j;return true;}return false;};
 if(window.STUD_PRICES)useP(window.STUD_PRICES);
