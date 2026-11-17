@@ -198,7 +198,8 @@ let cxRange='all',cxView='total',cxSel=null,cxSearch='',cxTheme='all',cxShowAll=
 .cx-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:4px 24px}
 details.cx-th{background:#05131D;border:2px solid #6C6E68;border-radius:8px;padding:8px 10px;margin:6px 0}details.cx-th summary{cursor:pointer;font-weight:700}
 .cx-miss{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.cx-miss button{background:#6B5A5A;color:#F2F3F2;font-weight:600;font-size:12px;margin:0;padding:5px 8px}
-.cx input::placeholder{color:#E0D8D8}.cx-mval input{width:110px;background:#05131D;color:#F2F3F2;border:1px solid #A5CA18;border-radius:6px;padding:6px}.cx-mval button{padding:6px 10px}
+.cx input::placeholder{color:#E0D8D8}.cx-figmeta,.cx-figmeta .figmeta{color:#D5D7D3;margin-top:2px}.modal .figmeta{margin:2px 0 8px;font-size:14px}
+.cx-mval input{width:110px;background:#05131D;color:#F2F3F2;border:1px solid #A5CA18;border-radius:6px;padding:6px}.cx-mval button{padding:6px 10px}
 @media (max-width:600px){.cx-tiles{grid-template-columns:1fr 1fr;gap:8px}.cx-tile{padding:8px 9px}.cx-tile .v{font-size:19px}.cx .hide-sm{display:none}table.cx-t{min-width:0;font-size:12px}.cx-t td,.cx-t th{padding:6px 3px}.cx-t .r{white-space:normal}.cx-t .small{white-space:nowrap}}
 .cx .show-sm{display:none}@media (max-width:600px){.cx .show-sm{display:inline}}`;document.head.appendChild(st);})();
 const tile=(v,l,d,t)=>`<div class="cx-tile ${t?'t'+t:''}"><div class="v">${v}</div><div class="l">${l}</div>${d?`<div class="d">${d}</div>`:''}</div>`;
@@ -215,6 +216,8 @@ function figMap(o){
   const m={},lf=(ex&&ex.figs)||{};for(const id in lf){const f=lf[id];m[id]={name:f.name||id,theme:f.theme||'Other',qty:f.qty,loose:f.qty,from:[]};}return m;
 }
 function figCounts(F){let total=0,loose=0;for(const id in F){total+=F[id].qty||0;loose+=Math.min(F[id].loose||0,F[id].qty||0);}return {total,loose,inSets:total-loose,uniq:Object.keys(F).length};}
+const figMeta=id=>{if(typeof figMetaTxt!=='function')return '';try{return figMetaTxt(id)||'';}catch(e){return '';}};
+const figFacts=id=>(typeof FIGMETA!=='undefined'&&FIGMETA&&FIGMETA[id])||null; // [parts, first year, first set] (read-only, for the Year/Pieces columns)
 const inSetNote=f=>{const fr=(f.from||[]).map(sn);if(!fr.length)return '';return 'in set '+fr.slice(0,2).join(', ')+(fr.length>2?` +${fr.length-2} more`:'');};
 
 // ---------- main render ----------
@@ -367,7 +370,8 @@ function renderAll(){
   const figs=figMap(owned);
   const rows=list.map(s=>({type:'Set',...s})).concat(Object.entries(figs).map(([id,f])=>{const m=META&&META.figs[id];
     const lo=Math.min(f.loose||0,f.qty||0),ins=(f.qty||0)-lo,note=inSetNote(f);
-    return {type:'Minifig',num:id,name:f.name||id,theme:f.theme||'Other',year:null,parts:null,qty:f.qty,parent:(f.from||[]).find(k=>owned&&owned[k])||null,
+    const ff=figFacts(id);
+    return {type:'Minifig',num:id,name:f.name||id,theme:f.theme||'Other',year:ff&&ff[1]||null,parts:ff&&ff[0]||null,qty:f.qty,meta:figMeta(id),parent:(f.from||[]).find(k=>owned&&owned[k])||null,
       note:note?(lo?`${lo} loose · ${ins} ${note}`:note):'',
       val:m&&m.vq?{v:m.v/m.vq,cur:META.cur||'USD',src:'your file'}:null};}));
   if(!rows.length){el.innerHTML='';return;}
@@ -381,7 +385,7 @@ function renderAll(){
   const LIM=50,shown=cxShowAll?f:f.slice(0,LIM),anyVal=rows.some(r=>r.val);
   const cols=['#','Name','Theme','Year','Pieces','Qty'].concat(has.cond?['Condition']:[],has.loc?['Location']:[],has.date?['Acquired']:[],has.cost?['Paid']:[],anyVal?['Est. value']:[]);
   const right=cols.map(c=>['Year','Pieces','Qty','Paid','Est. value'].includes(c));
-  const tr=r=>`<tr ${r.type==='Set'?`class="click" data-open="${E(r.num)}"`:''}><td>${E(sn(r.num))}</td><td>${E(r.name)}${r.type==='Minifig'?` <span class="muted small">minifig${r.note?' · '+E(r.note):''}</span>`:''}</td><td>${E(r.theme)}</td><td class="r">${r.year||'—'}</td><td class="r">${r.parts!=null?r.parts.toLocaleString():'—'}</td><td class="r">${r.qty}</td>`+
+  const tr=r=>`<tr class="click" ${r.type==='Set'?`data-open="${E(r.num)}"`:`data-fig="${E(r.num)}"`}><td>${E(sn(r.num))}</td><td>${E(r.name)}${r.type==='Minifig'?` <span class="muted small">minifig${r.note?' · '+E(r.note):''}</span>${r.meta?`<div class="small cx-figmeta">${r.meta}</div>`:''}`:''}</td><td>${E(r.theme)}</td><td class="r">${r.year||'—'}</td><td class="r">${r.parts!=null?r.parts.toLocaleString():'—'}</td><td class="r">${r.qty}</td>`+
     (has.cond?`<td>${E(r.cond||'—')}</td>`:'')+(has.loc?`<td>${E(r.loc||'—')}</td>`:'')+(has.date?`<td>${r.date?fmtD(r.date):'—'}</td>`:'')+(has.cost?`<td class="r">${r.cost?money(r.cost,cur):'—'}</td>`:'')+(anyVal?`<td class="r">${r.val?money(r.val.v,r.val.cur):'—'}</td>`:'')+'</tr>';
   el.innerHTML=`<h2 id="cx-all">All my stuff</h2><p class="cx-cap">Every set and minifig in your upload, including the minifigs that come in your sets.${anyVal?' Values are estimates; tap a set for its source and date.':''}</p>
 <div class="cx-ctl"><input type="search" id="cx-q" placeholder="Set number or name" value="${E(cxSearch)}"><select id="cx-thf"><option value="all">All themes</option>${themes.map(t=>`<option ${t===cxTheme?'selected':''}>${E(t)}</option>`).join('')}</select><span class="muted small">${f.length} of ${rows.length}</span></div>
@@ -390,6 +394,26 @@ ${cols.length>6?'<p class="muted small show-sm">Swipe the table sideways for mor
   document.getElementById('cx-thf').onchange=e=>{cxTheme=e.target.value;renderAll();};
   const m=document.getElementById('cx-more');if(m)m.onclick=()=>{cxShowAll=!cxShowAll;renderAll();};
   el.querySelectorAll('[data-open]').forEach(x=>x.onclick=()=>openSet(x.dataset.open));
+  el.querySelectorAll('[data-fig]').forEach(x=>x.onclick=()=>openFig(x.dataset.fig));
+}
+// ---------- minifig popup (All my stuff rows and My Minifigs cards) ----------
+function openFig(id){
+  const F=figMap(owned),f=F[id];if(!f)return;if(typeof closeSet==='function')closeSet();
+  const lo=Math.min(f.loose||0,f.qty||0),ins=(f.qty||0)-lo,from=(f.from||[]).filter(k=>SETS[k]);
+  const img=typeof figImg==='function'?figImg(id):(/^fig-/i.test(id)?`https://cdn.rebrickable.com/media/sets/${encodeURIComponent(id)}.jpg`:`https://img.bricklink.com/ItemImage/MN/0/${encodeURIComponent(id)}.png`);
+  const link=/^fig-/i.test(id)?['Rebrickable',`https://rebrickable.com/minifigs/${encodeURIComponent(id)}/`]:['BrickLink',`https://www.bricklink.com/v2/catalog/catalogitem.page?M=${encodeURIComponent(id)}`];
+  const m=META&&META.figs&&META.figs[id],val=m&&m.vq?money(m.v/m.vq,META.cur||'USD')+' estimate · your file':'';
+  const bg=document.createElement('div');bg.className='modalbg';bg.id='setmodal';
+  bg.innerHTML=`<div class="modal" role="dialog" aria-modal="true" aria-label="${E(f.name||id)}"><button class="mclose" aria-label="Close">✕</button>
+<img class="mimg" alt="${E(f.name||id)}" src="${img}" onerror="this.outerHTML='<div class=&quot;setph&quot;>🙂</div>'">
+<div class="mbody"><h2>${E(f.name||id)}</h2><div class="meta"><span>${E(id)}</span><span>${E(f.theme||'Other')}</span><span>You own ×${f.qty}${lo&&ins?` (${lo} loose, ${ins} in sets)`:lo?' loose':''}</span></div>
+${figMeta(id)}
+${from.length?`<h4>In your sets</h4><div class="cx-miss">${from.map(k=>`<button data-open="${E(k)}">${E(sn(k))} ${E(SETS[k][0])} (${SETS[k][1]})</button>`).join('')}</div>`:''}
+${val?`<h4>Value</h4><p>${E(val)}</p>`:''}
+<a class="btn" href="${link[1]}" target="_blank" rel="noopener">View on ${link[0]}</a></div></div>`;
+  const close=()=>{bg.remove();document.removeEventListener('keydown',esc_);},esc_=e=>{if(e.key==='Escape')close();};
+  bg.onclick=e=>{if(e.target===bg)close();};document.body.appendChild(bg);bg.querySelector('.mclose').onclick=close;document.addEventListener('keydown',esc_);
+  bg.querySelectorAll('[data-open]').forEach(x=>x.onclick=()=>{close();openSet(x.dataset.open);});
 }
 function bulkHTML(){
   const ex=(typeof extras!=='undefined'&&extras)||{};const loose=ex.looseParts||0,fp=ex.figParts||0;if(!loose&&!fp)return '';
@@ -427,6 +451,23 @@ const _open=openSet;openSet=function(num){_open(num);try{
   const s=document.getElementById('cx-uvs');if(s)s.onclick=()=>{const n=parseNum(document.getElementById('cx-uv').value);if(n){USERV[num]={v:n,cur:mainCur(),d:today()};}else delete USERV[num];sv(LS.user,USERV);closeSet();render(owned);};
   const c=document.getElementById('cx-uvc');if(c)c.onclick=()=>{delete USERV[num];sv(LS.user,USERV);closeSet();render(owned);};
 }catch(err){console.error(err);}};
+if(typeof renderFigs==='function'){const _rf=renderFigs;renderFigs=function(){_rf.apply(this,arguments);try{document.querySelectorAll('#myfigs .figcard').forEach(c=>{const img=c.querySelector('img.setimg');const id=img?img.alt:null;if(!id)return;c.style.cursor='pointer';c.setAttribute('role','button');c.tabIndex=0;c.onclick=()=>openFig(id);c.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openFig(id);}};});}catch(e){}};}
+// ---------- window.StudValue: read-only summary for the share card (share.js cardValueData) ----------
+// {total|null, n, of, cur, points:[[t,total],...], change:{pct,period,from}|null, example, brickOwl, srcs:[...]}
+window.StudValue={summary(o){
+  o=o||owned||{};const keys=Object.keys(o).filter(k=>SETS[k]);PH=buildPH(keys);
+  const list=collectionList(o),cur=mainCur();let total=0,n=0,example=false;const srcs=new Set();
+  const lbl=v=>v.kind==='user'?'your entries':v.kind==='file'?'your file':v.src;
+  list.forEach(s=>{const v=s.val;if(!v||v.cur!==cur)return;total+=v.v*s.qty;n++;srcs.add(lbl(v));if(v.example)example=true;});
+  let P=[],hSrc='',unit='date';const M0=model(list);
+  if(M0&&M0.cur===cur){const M=derive(M0);P=M.P;unit=M.unit;hSrc=M.kind==='feed'?M.src:'checkpoints on this device';if(M.example)example=true;}
+  let change=null;
+  if(P.length>=2){const L=P[P.length-1],bi=baseIdx(P,365),b=bi>=0?bi:0,c=sameSets(P[b],L),days=Math.round((L.t-P[b].t)/864e5);
+    const per=days>=360?(days>=720?Math.round(days/365)+'y':'1y'):unit==='month'||days>=56?Math.max(1,Math.round(days/30.44))+'mo':days+'d';
+    if(c.a>0&&days>0)change={pct:(c.b/c.a-1)*100,period:per,from:P[b].key};}
+  const all=[...new Set([...srcs].concat(hSrc&&P.length>=2?[hSrc]:[]))];
+  return {total:n?total:null,n,of:keys.length,cur,points:P.map(p=>[p.t,p.total]),change,example,brickOwl:all.some(s=>/brick\s*owl/i.test(s)),srcs:all};
+}};
 let rz;window.addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(drawChart,150);});
 // price feed hooks
 const useP=j=>{if(j&&typeof j==='object'&&j.sets&&typeof j.sets==='object'){PRICES=j;return true;}return false;};

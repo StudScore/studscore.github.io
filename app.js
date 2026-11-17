@@ -154,13 +154,17 @@ function figFromTxt(f){
   if(f.loose&&setq)return ` · ${f.loose} loose + ${setq} ${sets}`;
   return ' · '+sets;
 }
+// Parts, year and first set for a fig (Rebrickable figs only; BrickLink ids have no match yet).
+function figMetaTxt(id){if(typeof FIGMETA==='undefined'||!FIGMETA[id])return '';const [p,y,sn]=FIGMETA[id];const bits=[];
+  if(p)bits.push(p+(p===1?' piece':' pieces'));if(y&&sn){const nm=(typeof FIRSTSETNAMES!=='undefined'&&FIRSTSETNAMES[sn])||'';bits.push(`first in ${y}, ${sn.replace(/-1$/,'')}${nm?' '+nm:''}`);}
+  return bits.length?`<div class="muted figmeta">${esc(bits.join(' · '))}</div>`:'';}
 function renderFigs(){
   const el=document.getElementById('myfigs');if(!el)return;const figs=allFigs(owned,extras);
   const rows=Object.entries(figs).map(([id,f])=>({id,...f})).sort((a,b)=>String(a.theme).localeCompare(b.theme)||a.id.localeCompare(b.id,undefined,{numeric:true}));
   if(!rows.length){el.innerHTML='';return;}
   const LIMIT=30,shown=figShowAll?rows:rows.slice(0,LIMIT);let html='',last=null;
   for(const f of shown){if(f.theme!==last){html+=`<div class="setgroup">${esc(f.theme)}</div>`;last=f.theme;}
-    html+=`<div class="setcard figcard"><img class="setimg" loading="lazy" alt="${esc(f.id)}" src="${figImg(f.id)}" onerror="this.outerHTML='<div class=&quot;setph&quot;>🙂</div>'"><div class="setinfo"><b>${esc(f.name||f.id)}</b>${esc(f.id)}${f.qty>1?' · ×'+f.qty:''}${esc(figFromTxt(f))}</div></div>`;}
+    html+=`<div class="setcard figcard"><img class="setimg" loading="lazy" alt="${esc(f.id)}" src="${figImg(f.id)}" onerror="this.outerHTML='<div class=&quot;setph&quot;>🙂</div>'"><div class="setinfo"><b>${esc(f.name||f.id)}</b>${esc(f.id)}${f.qty>1?' · ×'+f.qty:''}${esc(figFromTxt(f))}${figMetaTxt(f.id)}</div></div>`;}
   el.innerHTML=`<h3>My Minifigs (${rows.length})</h3><div class="sets">${html}</div>${rows.length>LIMIT?`<button id="figmore">${figShowAll?'Show fewer':'Show all '+rows.length+' minifigs'}</button>`:''}`;
   const m=document.getElementById('figmore');if(m)m.onclick=()=>{figShowAll=!figShowAll;renderFigs();};
 }
