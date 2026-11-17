@@ -207,6 +207,16 @@ const bars=(entries,max,fmt)=>entries.map(([k,v,extra])=>`<div class="cx-brow"><
 const nSets=v=>v+(v===1?' set':' sets');
 const EMPTY_HIST='Your value history builds as you come back: each visit with values saves a dated checkpoint on this device. Full month-by-month history comes with the price feed.';
 
+// Minifigs: loose/imported figs plus figs packed in owned sets (app.js allFigs, merged by fig id so nothing counts twice).
+// Falls back to import-only figs if app.js has no allFigs.
+function figMap(o){
+  const ex=(typeof extras!=='undefined'&&extras)||null;
+  if(typeof allFigs==='function'){try{return allFigs(o,ex)||{};}catch(e){console.error('allFigs',e);}}
+  const m={},lf=(ex&&ex.figs)||{};for(const id in lf){const f=lf[id];m[id]={name:f.name||id,theme:f.theme||'Other',qty:f.qty,loose:f.qty,from:[]};}return m;
+}
+function figCounts(F){let total=0,loose=0;for(const id in F){total+=F[id].qty||0;loose+=Math.min(F[id].loose||0,F[id].qty||0);}return {total,loose,inSets:total-loose,uniq:Object.keys(F).length};}
+const inSetNote=f=>{const fr=(f.from||[]).map(sn);if(!fr.length)return '';return 'in set '+fr.slice(0,2).join(', ')+(fr.length>2?` +${fr.length-2} more`:'');};
+
 // ---------- main render ----------
 function collectionList(o){return Object.keys(o||{}).filter(k=>SETS[k]).map(k=>{const s=SETS[k],e=META&&META.sets[k];
   return {num:k,name:s[0],year:s[1],tid:s[2],theme:rootTheme(s[2]),sub:setTheme(k),parts:s[3],qty:o[k],val:valueOf(k),cost:e&&e.cq?e.c/e.cq:null,date:e?e.d:null,cond:condOf(k),loc:e&&Object.keys(e.loc).length?Object.keys(e.loc).join(', '):null};});}
@@ -236,12 +246,13 @@ function snapshotHTML(list,cur){
   const th={};list.forEach(s=>{const t=th[s.theme]||(th[s.theme]={n:0,p:0,v:0});t.n+=s.qty;t.p+=s.parts*s.qty;if(s.val&&s.val.cur===cur)t.v+=s.val.v*s.qty;});
   const thE=Object.entries(th).sort((x,y)=>y[1].n-x[1].n),T=totals(list,cur);
   const cost=list.filter(s=>s.cost).reduce((x,s)=>x+s.cost*s.qty,0),costN=list.filter(s=>s.cost).length;
-  const figs=(typeof extras!=='undefined'&&extras&&extras.figs)?Object.values(extras.figs).reduce((x,f)=>x+f.qty,0):0;
+  const FC=figCounts(figMap(owned)),figs=FC.total;
   let h=`<h2 id="cx-snapshot">Collection snapshot</h2><p class="cx-cap">Your collection as of ${fmtD(today())}, from your upload${META&&META.fmt?' ('+E(META.fmt)+')':''}.</p><div class="cx-tiles">`;
-  h+=tile(sets.toLocaleString(),'Sets owned',`${list.length.toLocaleString()} different sets${figs?`, plus ${figs.toLocaleString()} minifigs`:''}`);
+  h+=tile(sets.toLocaleString(),'Sets owned',`${list.length.toLocaleString()} different sets`);
   h+=tile(pcs.toLocaleString(),'Pieces in sets','official counts, Rebrickable');
   h+=T.n?tile(money(T.v,cur),'Estimated value',`${T.n} of ${list.length} sets valued · ${E(srcText(T.srcs))}${T.other?` · ${T.other} in other currencies not counted`:''}${T.ex?' · EXAMPLE DATA':''}`)
         :tile('Coming soon','Estimated value','No values yet. Add them from your file or the set popup, or wait for the price feed.');
+  if(figs)h+=tile(figs.toLocaleString(),'Minifigs',`${FC.uniq.toLocaleString()} different${FC.inSets?` · ${FC.loose?FC.loose.toLocaleString()+' loose + ':''}${FC.inSets.toLocaleString()} in your sets`:' · loose'}`);
   h+=tile(String(thE.length),'Themes',thE.length?`${E(thE[0][0])} leads with ${thE[0][1].n} set${thE[0][1].n>1?'s':''}`:'');
   if(costN)h+=tile(money(cost,cur),'What you paid',`${costN} of ${list.length} sets have a cost${T.n?'':''}`);
   if(costN&&T.n){const both=list.filter(s=>s.cost&&s.val&&s.val.cur===cur);if(both.length){const c=both.reduce((x,s)=>x+s.cost*s.qty,0),v=both.reduce((x,s)=>x+s.val.v*s.qty,0);h+=tile(pct(c,v),'Value vs paid',`${signed(c,v,cur)} on ${both.length} sets with both`,tone(c,v));}}
@@ -353,18 +364,26 @@ function checkpointsHTML(M,list){
 }
 function renderAll(){
   const el=document.getElementById('cx-allwrap');if(!el||!LAST)return;const {list,cur}=LAST;
-  const figs=(typeof extras!=='undefined'&&extras&&extras.figs)||{};
-  const rows=list.map(s=>({type:'Set',...s})).concat(Object.entries(figs).map(([id,f])=>{const m=META&&META.figs[id];return {type:'Minifig',num:id,name:f.name||id,theme:f.theme||'Other',year:null,parts:null,qty:f.qty,val:m&&m.vq?{v:m.v/m.vq,cur:META.cur||'USD',src:'your file'}:null};}));
+  const figs=figMap(owned);
+  const rows=list.map(s=>({type:'Set',...s})).concat(Object.entries(figs).map(([id,f])=>{const m=META&&META.figs[id];
+    const lo=Math.min(f.loose||0,f.qty||0),ins=(f.qty||0)-lo,note=inSetNote(f);
+    return {type:'Minifig',num:id,name:f.name||id,theme:f.theme||'Other',year:null,parts:null,qty:f.qty,parent:(f.from||[]).find(k=>owned&&owned[k])||null,
+      note:note?(lo?`${lo} loose · ${ins} ${note}`:note):'',
+      val:m&&m.vq?{v:m.v/m.vq,cur:META.cur||'USD',src:'your file'}:null};}));
   if(!rows.length){el.innerHTML='';return;}
   const has=META&&META.has||{},themes=[...new Set(rows.map(r=>r.theme))].sort();
   const q=cxSearch.trim().toLowerCase(),f=rows.filter(r=>(cxTheme==='all'||r.theme===cxTheme)&&(!q||(r.num+' '+r.name).toLowerCase().includes(q)))
-    .sort((a,b)=>a.theme.localeCompare(b.theme)||(a.year||0)-(b.year||0)||String(a.num).localeCompare(String(b.num),undefined,{numeric:true}));
+    .sort((a,b)=>{const x=sortKey(a),y=sortKey(b);for(let i=0;i<x.length;i++){const c=typeof x[i]==='number'?x[i]-y[i]:String(x[i]).localeCompare(String(y[i]),undefined,{numeric:true});if(c)return c;}return 0;});
+  // sets by theme, year, number; each set's minifigs right under it; loose minifigs at the end of their theme
+  function sortKey(r){if(r.type==='Set')return [r.theme,0,r.year||0,r.num,0,''];
+    const p=r.parent&&SETS[r.parent];if(p)return [rootTheme(p[2]),0,p[1],r.parent,1,r.num];
+    return [r.theme,1,0,'',1,r.num];}
   const LIM=50,shown=cxShowAll?f:f.slice(0,LIM),anyVal=rows.some(r=>r.val);
   const cols=['#','Name','Theme','Year','Pieces','Qty'].concat(has.cond?['Condition']:[],has.loc?['Location']:[],has.date?['Acquired']:[],has.cost?['Paid']:[],anyVal?['Est. value']:[]);
   const right=cols.map(c=>['Year','Pieces','Qty','Paid','Est. value'].includes(c));
-  const tr=r=>`<tr ${r.type==='Set'?`class="click" data-open="${E(r.num)}"`:''}><td>${E(sn(r.num))}</td><td>${E(r.name)}${r.type==='Minifig'?' <span class="muted small">minifig</span>':''}</td><td>${E(r.theme)}</td><td class="r">${r.year||'—'}</td><td class="r">${r.parts!=null?r.parts.toLocaleString():'—'}</td><td class="r">${r.qty}</td>`+
+  const tr=r=>`<tr ${r.type==='Set'?`class="click" data-open="${E(r.num)}"`:''}><td>${E(sn(r.num))}</td><td>${E(r.name)}${r.type==='Minifig'?` <span class="muted small">minifig${r.note?' · '+E(r.note):''}</span>`:''}</td><td>${E(r.theme)}</td><td class="r">${r.year||'—'}</td><td class="r">${r.parts!=null?r.parts.toLocaleString():'—'}</td><td class="r">${r.qty}</td>`+
     (has.cond?`<td>${E(r.cond||'—')}</td>`:'')+(has.loc?`<td>${E(r.loc||'—')}</td>`:'')+(has.date?`<td>${r.date?fmtD(r.date):'—'}</td>`:'')+(has.cost?`<td class="r">${r.cost?money(r.cost,cur):'—'}</td>`:'')+(anyVal?`<td class="r">${r.val?money(r.val.v,r.val.cur):'—'}</td>`:'')+'</tr>';
-  el.innerHTML=`<h2 id="cx-all">All my stuff</h2><p class="cx-cap">Every set and minifig in your upload.${anyVal?' Values are estimates; tap a set for its source and date.':''}</p>
+  el.innerHTML=`<h2 id="cx-all">All my stuff</h2><p class="cx-cap">Every set and minifig in your upload, including the minifigs that come in your sets.${anyVal?' Values are estimates; tap a set for its source and date.':''}</p>
 <div class="cx-ctl"><input type="search" id="cx-q" placeholder="Set number or name" value="${E(cxSearch)}"><select id="cx-thf"><option value="all">All themes</option>${themes.map(t=>`<option ${t===cxTheme?'selected':''}>${E(t)}</option>`).join('')}</select><span class="muted small">${f.length} of ${rows.length}</span></div>
 ${cols.length>6?'<p class="muted small show-sm">Swipe the table sideways for more columns.</p>':''}${table(cols,shown.map(tr),right)}${f.length>LIM?`<button id="cx-more">${cxShowAll?'Show fewer':'Show all '+f.length}</button>`:''}`;
   const qi=document.getElementById('cx-q');qi.oninput=()=>{cxSearch=qi.value;const pos=qi.selectionStart;renderAll();const n=document.getElementById('cx-q');n.focus();n.setSelectionRange(pos,pos);};
