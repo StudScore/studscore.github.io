@@ -77,7 +77,7 @@ function render(owned){
 .setctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
 .setctl select{background:#222;color:#eee;border:1px solid #333;border-radius:6px;padding:6px}
 .sets{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
-.setcard{display:block;background:#1c1c1c;border-radius:8px;overflow:hidden;color:#eee;text-decoration:none}
+.setcard{display:block;cursor:pointer;background:#1c1c1c;border-radius:8px;overflow:hidden;color:#eee;text-decoration:none}
 .setcard:hover{outline:2px solid #5dc21e}
 .setimg{width:100%;aspect-ratio:4/3;object-fit:contain;background:#fff;display:block}
 .setph{width:100%;aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;background:#2a2a2a;font-size:36px}
@@ -98,17 +98,61 @@ function renderSets(list){
   for(const s of shown){
     if(setSort==='theme'&&s.sub!==last){html+=`<div class="setgroup">${esc(s.sub)}</div>`;last=s.sub;}
     const n=encodeURIComponent(s.num);
-    html+=`<a class="setcard" href="https://rebrickable.com/sets/${n}/" target="_blank" rel="noopener"><img class="setimg" loading="lazy" alt="${esc(s.name)}" src="https://cdn.rebrickable.com/media/sets/${n}.jpg" onerror="this.outerHTML='<div class=&quot;setph&quot;>🧱</div>'"><div class="setinfo"><b>${esc(s.name)}</b>${esc(s.num.replace(/-1$/,''))} · ${s.year}<br><span class="muted">${esc(s.sub)} · ${s.parts.toLocaleString()} pcs${s.qty>1?' · ×'+s.qty:''}</span></div></a>`;
+    html+=`<div class="setcard" role="button" tabindex="0" data-num="${esc(s.num)}"><img class="setimg" loading="lazy" alt="${esc(s.name)}" src="https://cdn.rebrickable.com/media/sets/${n}.jpg" onerror="this.outerHTML='<div class=&quot;setph&quot;>🧱</div>'"><div class="setinfo"><b>${esc(s.name)}</b>${esc(s.num.replace(/-1$/,''))} · ${s.year}<br><span class="muted">${esc(s.sub)} · ${s.parts.toLocaleString()} pcs${s.qty>1?' · ×'+s.qty:''}</span></div></div>`;
   }
   el.innerHTML=`<h3>My Sets (${rows.length})</h3><div class="setctl"><label class="muted small">Sort by</label><select id="setsort">
 <option value="theme">Theme</option><option value="year_old">Year (oldest first)</option><option value="year_new">Year (newest first)</option><option value="pieces">Piece count</option></select></div>
 <div class="sets">${html}</div>${rows.length>LIMIT?`<button id="setmore">${setShowAll?'Show fewer':'Show all '+rows.length+' sets'}</button>`:''}`;
   const sel=document.getElementById('setsort');sel.value=setSort;sel.onchange=()=>{setSort=sel.value;renderSets(list);};
+  el.querySelectorAll('.setcard').forEach(c=>{c.onclick=()=>openSet(c.dataset.num);c.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openSet(c.dataset.num);}};});
   const m=document.getElementById('setmore');if(m)m.onclick=()=>{setShowAll=!setShowAll;renderSets(list);};
+}
+
+// ---- Set detail popup ----
+(function(){const st=document.createElement('style');st.textContent=`
+.modalbg{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:50;padding:12px}
+.modal{background:#1c1c1c;border-radius:12px;max-width:560px;width:100%;max-height:90vh;overflow:auto;position:relative}
+.modal .mimg{width:100%;max-height:300px;object-fit:contain;background:#fff;display:block}
+.modal .mbody{padding:16px}.modal h2{margin:0 0 4px;font-size:20px}
+.modal .meta{display:flex;flex-wrap:wrap;gap:6px 14px;color:#aaa;font-size:13px;margin-bottom:10px}
+.modal h4{margin:14px 0 4px;color:#5dc21e}.modal p{margin:4px 0;line-height:1.45}
+.modal .chips{display:flex;flex-wrap:wrap;gap:6px}.modal .chip{background:#2a2a2a;border-radius:12px;padding:3px 10px;font-size:13px}
+.modal .mclose{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.6);border-radius:50%;width:34px;height:34px;padding:0;margin:0;font-size:18px}
+.modal a.btn{display:inline-block;background:#107c10;color:#fff;text-decoration:none;padding:8px 14px;border-radius:6px;margin-top:14px}`;document.head.appendChild(st);})();
+function findLore(themeId){
+  if(typeof LORE==='undefined'||!LORE||!LORE.themes)return null;
+  let id=themeId,n=0;
+  while(id!=null&&n<10){const l=LORE.themes[id]||LORE.themes[String(id)];if(l)return l;const t=THEMES[id];id=t?t[1]:null;n++;}
+  return null;
+}
+function closeSet(){const m=document.getElementById('setmodal');if(m)m.remove();document.removeEventListener('keydown',escClose);}
+function escClose(e){if(e.key==='Escape')closeSet();}
+function openSet(num){
+  const d=SETS[num];if(!d)return;closeSet();
+  const [name,year,tid,parts]=d, n=encodeURIComponent(num);
+  const lore=findLore(tid);
+  const note=(typeof LORE!=='undefined'&&LORE&&LORE.sets)?LORE.sets[num]:null;
+  const qty=(typeof owned!=='undefined'&&owned[num])||0;
+  let loreHtml='';
+  if(lore){
+    loreHtml+=`<h4>${esc(lore.title||setTheme(num))}${lore.era?` <span class="muted small">· ${esc(lore.era)}</span>`:''}</h4>`;
+    if(lore.story)loreHtml+=`<p>${esc(lore.story)}</p>`;
+    if(Array.isArray(lore.factions)&&lore.factions.length)loreHtml+=`<h4>Heroes &amp; villains</h4><div class="chips">${lore.factions.map(f=>`<span class="chip">${esc(typeof f==='string'?f:(f.name||''))}</span>`).join('')}</div>`;
+  }
+  if(note)loreHtml+=`<h4>How it fits the story</h4><p>${esc(note)}</p>`;
+  const bg=document.createElement('div');bg.className='modalbg';bg.id='setmodal';
+  bg.innerHTML=`<div class="modal" role="dialog" aria-modal="true" aria-label="${esc(name)}"><button class="mclose" aria-label="Close">✕</button>
+<img class="mimg" alt="${esc(name)}" src="https://cdn.rebrickable.com/media/sets/${n}.jpg" onerror="this.outerHTML='<div class=&quot;setph&quot;>🧱</div>'">
+<div class="mbody"><h2>${esc(name)}</h2><div class="meta"><span>#${esc(num.replace(/-1$/,''))}</span><span>${year}</span><span>${parts.toLocaleString()} pcs</span><span>${esc(setTheme(num))}</span>${qty>1?`<span>You own ×${qty}</span>`:''}</div>
+${loreHtml}<h4>Value</h4><p class="muted">Coming soon</p>
+<a class="btn" href="https://rebrickable.com/sets/${n}/" target="_blank" rel="noopener">View on Rebrickable</a></div></div>`;
+  bg.onclick=e=>{if(e.target===bg)closeSet();};
+  document.body.appendChild(bg);bg.querySelector('.mclose').onclick=closeSet;
+  document.addEventListener('keydown',escClose);
 }
 let owned={};
 document.getElementById('file').onchange=e=>{const f=e.target.files[0];if(!f)return;f.text().then(t=>{owned=parseList(t);render(owned);});};
 document.getElementById('go').onclick=()=>{owned=parseList(document.getElementById('paste').value);render(owned);};
-const SAMPLE="Set Number,Quantity\n11513-1,1\n72159-1,1\n72155-1,1\n8103-1,1\n8101-1,1\n7707-1,1\n7700-1,1\n7706-1,1\n7712-1,1\n7702-1,1\n8114-1,1\n8100-1,1\n8113-1,1\n7708-1,1\n8102-1,1\n8105-1,1\n7709-1,1\n7713-1,1\n8104-1,1\n7770-1,1\n7771-1,1\n7772-1,1\n7774-1,1\n7775-1,1\n7773-1,1\n7776-1,1\n77037-1,1\n10375-1,1\n43249-1,1\n76282-1,1\n76249-1,1\n4970-1,1\n72046-1,1\n11373-1,1\n76251-1,1\n75318-1,1\n75308-1,1\n75349-1,1\n75328-1,1\n77093-1,1\n6915-1,1\n7693-1,1\n72151-1,1\n72167-1,1\n72156-1,1\n72165-1,1\n40887-1,1\n7965-1,1\n";
+const SAMPLE="Set Number,Quantity\n11513-1,1\n72159-1,1\n72155-1,1\n8103-1,1\n8101-1,1\n7707-1,1\n7700-1,1\n7706-1,1\n7712-1,1\n7702-1,1\n8114-1,1\n8100-1,1\n8113-1,1\n7708-1,1\n8102-1,1\n8105-1,1\n7709-1,1\n7713-1,1\n8104-1,1\n7770-1,1\n7771-1,1\n7772-1,1\n7774-1,1\n7775-1,1\n7773-1,1\n7776-1,1\n77037-1,1\n10375-1,1\n43249-1,1\n76282-1,1\n76249-1,1\n4940-1,1\n72046-1,1\n11373-1,1\n76251-1,1\n75318-1,1\n75308-1,1\n75349-1,1\n75328-1,1\n77093-1,1\n6915-1,1\n7693-1,1\n72151-1,1\n72167-1,1\n72156-1,1\n72165-1,1\n40887-1,1\n7965-1,1\n";
 document.getElementById('demo').onclick=()=>{owned=parseList(SAMPLE);render(owned);};
 render(owned);
