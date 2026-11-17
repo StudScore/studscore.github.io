@@ -68,9 +68,26 @@ const LEGO={black:'#05131D',dbg:'#6C6E68',dkgray:'#6B5A5A',light:'#F2F3F2',lime:
 function medal(a){if(!a.g)return {bg:LEGO.azure,fg:LEGO.black,name:'milestone'};if(a.g>=100)return {bg:LEGO.red,fg:LEGO.light,name:'legendary'};
   if(a.g>=50)return {bg:LEGO.gold,fg:LEGO.black,name:'gold'};if(a.g>=25)return {bg:LEGO.silver,fg:LEGO.black,name:'silver'};return {bg:LEGO.dkorange,fg:LEGO.light,name:'bronze'};}
 let extras=null; // minifigs, minifig parts and loose parts from the last import (sets stay in `owned`)
-function computeFigs(ex){
-  ex=ex||{};const figs=ex.figs||{};const ids=Object.keys(figs);
+function figName(id){return (typeof FIGNAMES!=='undefined'&&FIGNAMES[id])||id;}
+function figImg(id){return /^fig-/i.test(id)?`https://cdn.rebrickable.com/media/sets/${encodeURIComponent(id)}.jpg`:`https://img.bricklink.com/ItemImage/MN/0/${encodeURIComponent(id)}.png`;}
+// Minifigs packed in owned sets (qty of the set applied). Theme is the set's root theme so UCS figs count as Star Wars, CMF as Collectible Minifigures.
+function figsFromSets(owned){
+  const out={};if(typeof SETFIGS==='undefined'||!owned)return out;
+  for(const sn in owned){const list=SETFIGS[sn];if(!list||!SETS[sn])continue;const q=owned[sn],theme=rootTheme(SETS[sn][2]);
+    for(const [id,fq] of list){const f=out[id]||(out[id]={qty:0,name:figName(id),theme,from:[]});f.qty+=fq*q;if(!f.from.includes(sn))f.from.push(sn);}}
+  return out;
+}
+// Loose/imported complete figs plus in-set figs. extras.figs stays import-only so collection.js keeps working.
+function allFigs(owned,ex){
+  const all={},loose=(ex&&ex.figs)||{},inset=figsFromSets(owned);
+  for(const id in loose){const f=loose[id];all[id]={name:f.name||figName(id),theme:f.theme||'Other',qty:f.qty,loose:f.qty,from:[]};}
+  for(const id in inset){const s=inset[id];if(all[id]){all[id].qty+=s.qty;all[id].from=s.from;}else all[id]={name:s.name,theme:s.theme,qty:s.qty,loose:0,from:s.from};}
+  return all;
+}
+function computeFigs(ex,owned){
+  ex=ex||{};const figs=allFigs(owned,ex);const ids=Object.keys(figs);
   const total=ids.reduce((a,k)=>a+figs[k].qty,0),uniq=ids.length,fp=ex.figParts||0,loose=ex.looseParts||0,partsOwned=fp+loose;
+  const figLoose=ids.reduce((a,k)=>a+(figs[k].loose||0),0),figInSets=total-figLoose;
   const th={};ids.forEach(k=>{const t=figs[k].theme||'Other';th[t]=(th[t]||0)+figs[k].qty;});
   const nth=Object.keys(th).length,top=Object.entries(th).sort((a,b)=>b[1]-a[1])[0];
   const cmf=ids.filter(k=>/^col/i.test(k)||/collectible/i.test(figs[k].theme||'')).reduce((a,k)=>a+figs[k].qty,0);
@@ -89,39 +106,61 @@ function computeFigs(ex){
   F.forEach(a=>a.sys='FS');
   const B=partsOwned?[tier('b1k','🪣','Bucket of Bricks','Own 1,000 parts',0,partsOwned,1000),tier('b5k','🧺','Bulk Bin','Own 5,000 parts',0,partsOwned,5000),tier('b20k','⛰️','Brick Pit','Own 20,000 parts',0,partsOwned,20000)]:[];
   B.forEach(b=>b.nopoints=true);
-  return {fach:F,bulk:B,figTotal:total,figUnique:uniq,figThemes:nth,figParts:fp,looseParts:loose,partsOwned};
+  return {fach:F,bulk:B,figTotal:total,figUnique:uniq,figThemes:nth,figParts:fp,looseParts:loose,partsOwned,figLoose,figInSets,figs};
 }
 function scores(owned,ex){
-  const c=compute(owned),f=computeFigs(ex);
+  const c=compute(owned),f=computeFigs(ex,owned);
   const sum=(a,u)=>a.filter(x=>!u||x.unlocked).reduce((s,x)=>s+x.g,0);
   const ss=sum(c.ach,1),ssMax=sum(c.ach),fs=sum(f.fach,1),fsMax=sum(f.fach);
   return {...c,...f,ss,ssMax,fs,fsMax,lead:fs>ss?'FS':'SS'};
+}
+function badgeFallback(el){const p=el.parentNode;if(p&&p.dataset.fallback)p.textContent=p.dataset.fallback;}
+// Map Rebrickable theme ids (and close aliases from Cole's themes.csv) to icon slugs. Walk THEMES parents, else generic.
+const THEME_ICONS={1:'technic',52:'city',126:'space',130:'space',147:'pirates',158:'star_wars',186:'castle',246:'harry_potter',307:'aqua_raiders',310:'aqua_raiders',324:'bionicle',389:'exo_force',435:'ninjago',442:'rock_raiders',494:'friends',535:'cmf',576:'ideas',577:'minecraft',602:'jurassic_world',673:'creator_expert',695:'super_heroes',696:'super_heroes',721:'creator_expert',776:'pokemon'};
+function themeIconSlug(tid){let id=String(tid),n=0;while(id&&id!=='null'&&n<12){if(THEME_ICONS[id])return THEME_ICONS[id];const t=typeof THEMES!=='undefined'?THEMES[id]:null;id=t&&t[1]!=null?String(t[1]):'';n++;}return 'generic';}
+function badgeHTML(a){
+  const fb=esc(a.icon);
+  if(/^th\d+$/.test(a.id)){
+    const slug=themeIconSlug(a.id.slice(2));
+    return `<div class="icon medal theme-badge" data-fallback="${fb}"><img class="tb-icon" src="badges/themes/${slug}.webp" alt="" loading="lazy" onerror="this.onerror=null;this.src='badges/themes/generic.webp'"><img class="tb-frame" src="badges/theme_frame.webp" alt="${esc(a.title)}" loading="lazy" onerror="badgeFallback(this)"></div>`;
+  }
+  return `<div class="icon medal" data-fallback="${fb}"><img src="badges/${a.id}.webp" alt="${esc(a.title)}" loading="lazy" onerror="badgeFallback(this)"></div>`;
 }
 function render(owned){
   const S=scores(owned,extras);const {list,ach,pieces,themeCount,fach,bulk}=S;
   const el=document.getElementById('board');
   if(!list.length&&!S.figTotal&&!S.partsOwned){el.innerHTML=(extras&&extras.msg)||'<p class="muted">No recognized sets yet. Upload a Rebrickable set list CSV, a BrickLink inventory (CSV or XML), or paste set numbers.</p>';return;}
-  const tile=a=>{const m=medal(a),u=a.sys||'SS';return `<div class="tile ${a.unlocked?'':'locked'}" style="border-left-color:${a.unlocked?m.bg:LEGO.dkgray}"><div class="icon medal" style="border-color:${m.bg}">${a.icon}</div><div class="body"><div class="row"><b>${a.title}</b><span class="pill" style="background:${m.bg};color:${m.fg}">${a.nopoints?'no points':a.g+' '+u}</span></div><div class="muted">${a.desc}</div>${a.winner?`<div class="win">${esc(a.winner)}</div>`:''}${!a.unlocked&&a.goal?`<div class="bar"><div style="width:${100*a.progress/a.goal}%"></div></div><div class="muted small">${a.progress.toLocaleString()} / ${a.goal.toLocaleString()}</div>`:''}</div></div>`;};
+  const tile=a=>{const m=medal(a),u=a.sys||'SS';return `<div class="tile ${a.unlocked?'':'locked'}" style="border-left-color:${a.unlocked?m.bg:LEGO.dkgray}">${badgeHTML(a)}<div class="body"><div class="row"><b>${a.title}</b><span class="pill" style="background:${m.bg};color:${m.fg}">${a.nopoints?'no points':a.g+' '+u}</span></div><div class="muted">${a.desc}</div>${a.winner?`<div class="win">${esc(a.winner)}</div>`:''}${!a.unlocked&&a.goal?`<div class="bar"><div style="width:${100*a.progress/a.goal}%"></div></div><div class="muted small">${a.progress.toLocaleString()} / ${a.goal.toLocaleString()}</div>`:''}</div></div>`;};
   const block=(sys)=>{const isS=sys==='SS',sc=isS?S.ss:S.fs,mx=isS?S.ssMax:S.fsMax,A=isS?ach:fach,lead=S.lead===sys;
     return `<div class="score ${lead?'lead':'sub'} ${isS?'ss':'fs'}"><div class="lbl">${isS?'StudScore':'FigScore'}</div><div class="big">${sc.toLocaleString()} ${sys}</div><div class="muted">of ${mx.toLocaleString()} ${sys} · ${A.filter(a=>a.unlocked).length}/${A.length} unlocked</div><div class="bar main"><div style="width:${mx?100*sc/mx:0}%"></div></div></div>`;};
   const order=S.lead==='FS'?['FS','SS']:['SS','FS'];
-  const stats=`<div class="stats"><div><b>${list.length}</b> sets</div><div><b>${(pieces||0).toLocaleString()}</b> set pieces</div><div><b>${themeCount?Object.keys(themeCount).length:0}</b> themes</div><div><b>${S.figTotal.toLocaleString()}</b> minifigs</div><div><b>${S.figParts.toLocaleString()}</b> fig parts</div><div><b>${S.partsOwned.toLocaleString()}</b> parts owned</div></div>`;
+  const figStat=S.figInSets?`<div><b>${S.figTotal.toLocaleString()}</b> minifigs (${S.figLoose?S.figLoose.toLocaleString()+' loose + ':''}${S.figInSets.toLocaleString()} in sets)</div>`:`<div><b>${S.figTotal.toLocaleString()}</b> minifigs</div>`;
+  const stats=`<div class="stats"><div><b>${list.length}</b> sets</div><div><b>${(pieces||0).toLocaleString()}</b> set pieces</div><div><b>${themeCount?Object.keys(themeCount).length:0}</b> themes</div>${figStat}<div><b>${S.figParts.toLocaleString()}</b> fig parts</div><div><b>${S.partsOwned.toLocaleString()}</b> parts owned</div></div>`;
   const sect=(sys)=>{const A=sys==='SS'?ach:fach,nm=sys==='SS'?'StudScore':'FigScore';
-    if(!A.length)return sys==='SS'?'<h3>StudScore</h3><p class="muted">No sets in this upload yet, so no StudScore achievements.</p>':'<h3>FigScore</h3><p class="muted">No minifigs in this upload yet. Upload a BrickLink inventory with minifigs to start your FigScore.</p>';
+    if(!A.length)return sys==='SS'?'<h3>StudScore</h3><p class="muted">No sets in this upload yet, so no StudScore achievements.</p>':'<h3>FigScore</h3><p class="muted">No minifigs in this upload yet. Sets that include minifigs, or a BrickLink inventory of loose minifigs, will start your FigScore.</p>';
     return `<h3>${nm} · Unlocked</h3><div class="grid">${A.filter(a=>a.unlocked).map(tile).join('')||'<p class="muted">None yet.</p>'}</div><h3>${nm} · Locked</h3><div class="grid">${A.filter(a=>!a.unlocked).map(tile).join('')||'<p class="muted">All unlocked!</p>'}</div>`;};
   const note=extras&&extras.note?`<p class="muted small">${extras.note}</p>`:'';
-  el.innerHTML=`${note}<div class="banner"><div class="scores">${block(order[0])}${block(order[1])}</div>${stats}</div>${sect(order[0])}${sect(order[1])}${bulk.length?`<h3>Bulk milestones <span class="pill" style="background:${LEGO.azure};color:${LEGO.black}">no points</span></h3><p class="muted small">Loose parts don't add to your score, but they count here. You own ${S.partsOwned.toLocaleString()} parts (${S.looseParts.toLocaleString()} loose + ${S.figParts.toLocaleString()} minifig parts).</p><div class="grid">${bulk.map(tile).join('')}</div>`:''}<div id="mysets"></div><div id="myfigs"></div>`;
+  el.innerHTML=`${note}<div class="banner"><div class="scores">${block(order[0])}${block(order[1])}</div>${stats}</div>${sect(order[0])}${sect(order[1])}${bulk.length?`<h3>Bulk milestones <span class="pill" style="background:${LEGO.azure};color:${LEGO.black}">no points</span></h3><p class="muted small">Loose parts don't add to your score, but they count here. Only loose minifig parts count as fig parts — the pieces already in complete minifigs, whether those figs came from a set or were imported whole, are not added again. You own ${S.partsOwned.toLocaleString()} parts (${S.looseParts.toLocaleString()} loose + ${S.figParts.toLocaleString()} minifig parts).</p><div class="grid">${bulk.map(tile).join('')}</div>`:''}<div id="mysets"></div><div id="myfigs"></div>`;
   if(list.length)renderSets(list);
   renderFigs();
 }
 let figShowAll=false;
+function figFromTxt(f){
+  if(!f.from||!f.from.length)return '';
+  const nums=f.from.map(n=>n.replace(/-1$/,''));
+  const shown=nums.slice(0,3),more=nums.length-shown.length;
+  const sets=(nums.length===1?'from set ':'from sets ')+shown.join(', ')+(more?' and '+more+' more':'');
+  const setq=f.qty-(f.loose||0);
+  if(f.loose&&setq)return ` · ${f.loose} loose + ${setq} ${sets}`;
+  return ' · '+sets;
+}
 function renderFigs(){
-  const el=document.getElementById('myfigs');if(!el)return;const figs=(extras&&extras.figs)||{};
+  const el=document.getElementById('myfigs');if(!el)return;const figs=allFigs(owned,extras);
   const rows=Object.entries(figs).map(([id,f])=>({id,...f})).sort((a,b)=>String(a.theme).localeCompare(b.theme)||a.id.localeCompare(b.id,undefined,{numeric:true}));
   if(!rows.length){el.innerHTML='';return;}
   const LIMIT=30,shown=figShowAll?rows:rows.slice(0,LIMIT);let html='',last=null;
   for(const f of shown){if(f.theme!==last){html+=`<div class="setgroup">${esc(f.theme)}</div>`;last=f.theme;}
-    html+=`<div class="setcard figcard"><img class="setimg" loading="lazy" alt="${esc(f.id)}" src="https://img.bricklink.com/ItemImage/MN/0/${encodeURIComponent(f.id)}.png" onerror="this.outerHTML='<div class=&quot;setph&quot;>🙂</div>'"><div class="setinfo"><b>${esc(f.name||f.id)}</b>${esc(f.id)}${f.qty>1?' · ×'+f.qty:''}</div></div>`;}
+    html+=`<div class="setcard figcard"><img class="setimg" loading="lazy" alt="${esc(f.id)}" src="${figImg(f.id)}" onerror="this.outerHTML='<div class=&quot;setph&quot;>🙂</div>'"><div class="setinfo"><b>${esc(f.name||f.id)}</b>${esc(f.id)}${f.qty>1?' · ×'+f.qty:''}${esc(figFromTxt(f))}</div></div>`;}
   el.innerHTML=`<h3>My Minifigs (${rows.length})</h3><div class="sets">${html}</div>${rows.length>LIMIT?`<button id="figmore">${figShowAll?'Show fewer':'Show all '+rows.length+' minifigs'}</button>`:''}`;
   const m=document.getElementById('figmore');if(m)m.onclick=()=>{figShowAll=!figShowAll;renderFigs();};
 }

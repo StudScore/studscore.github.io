@@ -27,8 +27,11 @@ button{background:#A5CA18;color:#111;font-weight:700;border:0;padding:8px 14px;b
 .tile .bar div{background:#FE8A18}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:10px}
 .tile{display:flex;gap:12px;background:#6C6E68;border-left:6px solid #A5CA18;padding:12px;border-radius:8px}
-.tile.locked{opacity:.8;background:#6B5A5A}.icon{font-size:26px}.body{flex:1}
-.medal{width:44px;height:44px;flex:0 0 44px;border-radius:50%;border:4px solid #A5CA18;background:#05131D;display:flex;align-items:center;justify-content:center}
+.tile.locked{opacity:.8;background:#6B5A5A}.icon{font-size:28px}.body{flex:1}
+.medal{width:64px;height:64px;flex:0 0 64px;background:#1d1d1d;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+.medal img{width:100%;height:100%;object-fit:contain;display:block}
+.theme-badge .tb-icon{position:absolute;width:56%;height:56%;left:50.6%;top:49.5%;transform:translate(-50%,-50%);object-fit:contain;z-index:0}
+.theme-badge .tb-frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}
 .tile.locked .medal{filter:grayscale(1)}
 .pill{display:inline-block;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:700;white-space:nowrap;height:fit-content}
 .row{display:flex;justify-content:space-between;gap:8px}.g{color:#A5CA18;font-weight:700}.win{margin-top:4px;font-size:13px}
@@ -43,4 +46,4 @@ footer{font-size:12px;color:#D5D7D3;margin-top:30px}
 <div id="board"></div>
 <footer>Set data from <a href="https://rebrickable.com/downloads/">Rebrickable</a>. LEGO® is a trademark of the LEGO Group, which does not sponsor or endorse this prototype.</footer>
 </main>
-<script src="data.js"></script><script src="lore.js"></script><script src="importer.js"></script><script src="app.js"></script><script src="collection.js"></script><script src="share.js"></script></body></html>
+<script src="data.js"></script><script src="lore.js"></script><script src="importer.js"></script><script src="setfigs.js"></script><script src="app.js"></script><script src="collection.js"></script><script src="share.js"></script></body></html>
