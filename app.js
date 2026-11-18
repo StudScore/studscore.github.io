@@ -268,7 +268,7 @@ function openSet(num){
   if(lore){
     loreHtml+=`<h4>${esc(lore.title||setTheme(num))}${lore.era?` <span class="muted small">· ${esc(lore.era)}</span>`:''}</h4>`;
     if(lore.story)loreHtml+=`<p>${esc(lore.story)}</p>`;
-    if(Array.isArray(lore.factions)&&lore.factions.length)loreHtml+=`<h4>Heroes &amp; villains</h4><div class="chips">${lore.factions.map(f=>`<span class="chip">${esc(typeof f==='string'?f:(f.name||''))}</span>`).join('')}</div>`;
+    if(Array.isArray(lore.factions)&&lore.factions.length)loreHtml+=`<h4>${lore.factionsLabel?esc(lore.factionsLabel):(/^(Icons|Botanicals|Architecture|Art|Ideas|Creator Expert)$/.test(lore.title||'')?'What\'s in it':'Heroes &amp; villains')}</h4><div class="chips">${lore.factions.map(f=>`<span class="chip">${esc(typeof f==='string'?f:(f.name||''))}</span>`).join('')}</div>`;
   }
   if(note)loreHtml+=`<h4>How it fits the story</h4><p>${esc(note)}</p>`;
   const bg=document.createElement('div');bg.className='modalbg';bg.id='setmodal';

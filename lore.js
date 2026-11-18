@@ -512,6 +512,42 @@ const LORE = {
       story: "These sets bring Trainers and Pokémon into brick form, from posable display figures to Smart Play battle and adventure scenes. Some builds are quiet character studies; others stage concerts, berry work, buggies, or championship matchups. The story is the one Trainers already know: partner with Pokémon, take on the next challenge, and maybe evolve along the way.",
       factions: ["Trainers and partner Pokémon"]
     },
+    770: {
+      title: "Horizon Adventures",
+      era: "2025",
+      story: "A thousand years after the old world fell, machine hunter Aloy, raised as an outcast of the Nora tribe, sets out with her friend Varl to learn where she came from. The wilds are full of animal-like machines such as the Sawtooth and Shell-Walker, while the Eclipse cult serves HADES, a rogue AI that wants to wake the old world's deadliest machines. The LEGO game and set retell that first Horizon Zero Dawn chapter as a bright, jokey hunt, with fire, shock, and chill arrows doing most of the talking.",
+      factions: ["Aloy, Varl, and the Nora", "The Eclipse and HADES", "Machines"]
+    },
+    764: {
+      title: "The Legend of Zelda",
+      era: "2024-2026",
+      story: "In the kingdom of Hyrule, the hero Link and Princess Zelda keep rising against Ganondorf, who wants the Triforce and the power it holds. The sets return to Ocarina of Time, with the Great Deku Tree that sends Link out with the fairy Navi and the last battle in the ruins of Ganon's Castle, and the Deku Tree build can also be put together as it looks in Breath of the Wild. Whatever the era, the Master Sword ends up in the right hands.",
+      factions: ["Link, Zelda, and Hyrule's allies", "Ganondorf and Ganon"]
+    },
+    690: {
+      title: "Super Mario",
+      era: "2020-2026",
+      story: "Mario, and later Luigi and Peach, arrived as interactive figures that read colored tiles and Action Tags, so a course of pipes, ? Blocks, and Goombas becomes a coin-scoring level you build yourself. Bowser, his Koopalings, and a long line of Mushroom Kingdom foes wait at the end of the run. Alongside the play courses, adult display pieces like a giant Bowser and the Game Boy treat Nintendo history itself as the treasure.",
+      factions: ["Mario, Luigi, Peach, and friends", "Bowser and his minions"]
+    },
+    721: {
+      title: "Icons",
+      era: "2022-2026",
+      story: "Icons is LEGO's adult display line, the name Creator Expert took on in 2022: modular buildings, classic vehicles, and big licensed showpieces from films and games. There is no single storyline; each set is a tribute to one subject, from a posable Toothless to Sauron's helmet looming over its stand. The plot is whatever your shelf is about.",
+      factions: ["Display builds from many worlds"]
+    },
+    608: {
+      title: "Disney",
+      era: "2016-2026",
+      story: "Disney sets gather a century of animated characters, from Mickey and friends and the Disney Princesses to Stitch, into castles, cottages, and brick-built characters. Rather than one shared plot, each set replays a favorite film moment or simply captures a character's personality. Villains drop in where the movies need them, but the charm usually wins.",
+      factions: ["Disney heroes and friends", "Disney villains"]
+    },
+    769: {
+      title: "Botanicals",
+      era: "2021-2026",
+      story: "Botanicals began in January 2021 as the Botanical Collection with a Flower Bouquet and a Bonsai Tree, then became its own Botanicals theme in 2025. The sets are bouquets, potted plants, and arrangements built from bricks, often using pieces in surprising ways to make petals and leaves. There is no story to follow, only a display that never needs watering.",
+      factions: ["Flowers, plants, and arrangements"]
+    },
     577: {
       title: "Minecraft",
       era: "2013-2026",
