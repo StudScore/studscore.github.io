@@ -25,7 +25,7 @@ const tone=(a,b)=>b>a?'up':b<a?'down':'';
 const sn=k=>String(k).replace(/-1$/,'');
 const E=s=>esc(s==null?'':s);
 
-// ---------- read the extra columns (value, cost, condition, location, date) from the raw upload ----------
+// ---------- read the extra columns (value, cost, condition, date; storage locations are deliberately not read) from the raw upload ----------
 const normH=h=>String(h||'').toLowerCase().replace(/^\ufeff/,'').replace(/[^a-z0-9]/g,'');
 const COLS={id:['itemno','itemnumber','itemid','item','setnum','setnumber','setno','set','number'],variant:['variant'],type:['itemtype','type'],cat:['category','categoryname'],
   qty:['quantity','qty','qtyowned','quantityowned','owned'],desc:['description','itemname','name'],
@@ -33,7 +33,7 @@ const COLS={id:['itemno','itemnumber','itemid','item','setnum','setnumber','setn
   vnew:['valuenew','newvalue','currentvaluenew','marketvaluenew'],vused:['valueused','usedvalue','currentvalueused','marketvalueused'],
   cost:['cost','paid','pricepaid','purchaseprice','costprice','mycost','amountpaid','acquiredprice'],
   date:['dateacquired','acquired','acquireddate','purchasedate','datepurchased','bought','datebought','dateadded','added'],
-  cond:['condition','cond','newused','status'],sub:['completeness','subcondition','built'],loc:['location','storage','storagelocation','stored','bin','remarks'],cur:['currency']};
+  cond:['condition','cond','newused','status'],sub:['completeness','subcondition','built'],cur:['currency']};
 function parseNum(s){s=String(s||'').trim();if(!s)return null;s=s.replace(/[^\d.,-]/g,'');if(/^\d+,\d{1,2}$/.test(s))s=s.replace(',','.');else s=s.replace(/,/g,'');const n=parseFloat(s);return isFinite(n)&&n>0?n:null;}
 function parseDate(s){s=String(s||'').trim();if(!s)return null;let m=/(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/.exec(s);if(m)return `${m[1]}-${pad(m[2])}-${pad(m[3]||1)}`;
   m=/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/.exec(s);if(m){let y=+m[3];if(y<100)y+=y>50?1900:2000;return `${y}-${pad(m[1])}-${pad(m[2])}`;}
@@ -52,12 +52,13 @@ function buildMeta(text,fmt){
   const put=(type,id,qty,f)=>{
     if(!(qty>0))return;id=String(id||'').trim();if(!id)return;
     if(type==='S'){let k=setKey(id);if(!k&&/^col/i.test(id))k=cmfSetNum(id,f.desc);
-      if(k){const e=M.sets[k]||(M.sets[k]={q:0,v:0,vq:0,vn:null,vu:null,c:0,cq:0,d:null,cond:{},loc:{}});e.q+=qty;
+      if(k){const e=M.sets[k]||(M.sets[k]={q:0,v:0,vq:0,vn:null,vu:null,c:0,cq:0,d:null,cond:{}});e.q+=qty;
         if(f.value){e.v+=f.value*qty;e.vq+=qty;M.has.value=1;}if(f.vnew){e.vn=f.vnew;M.has.value=1;}if(f.vused){e.vu=f.vused;M.has.value=1;}
         if(f.cost){e.c+=f.cost*qty;e.cq+=qty;M.has.cost=1;}if(f.date){if(!e.d||f.date<e.d)e.d=f.date;M.has.date=1;}
-        if(f.cond){e.cond[f.cond]=(e.cond[f.cond]||0)+qty;M.has.cond=1;}if(f.loc){e.loc[f.loc]=(e.loc[f.loc]||0)+qty;M.has.loc=1;}return;}
-      if(/^col/i.test(id))type='M';else return;}
-    if(type==='M'){const e=M.figs[id]||(M.figs[id]={q:0,v:0,vq:0});e.q+=qty;if(f.value){e.v+=f.value*qty;e.vq+=qty;M.has.figValue=1;}return;}
+        if(f.cond){e.cond[f.cond]=(e.cond[f.cond]||0)+qty;M.has.cond=1;}return;}
+      if(/^col/i.test(id)||/^fig-\d{6}$/i.test(id))type='M';else return;}
+    if(type==='M'){const e=M.figs[id]||(M.figs[id]={q:0,v:0,vq:0});e.q+=qty;if(f.value){e.v+=f.value*qty;e.vq+=qty;M.has.figValue=1;}
+      if(f.vnew){e.vn=f.vnew;M.has.figValue=1;}if(f.vused){e.vu=f.vused;M.has.figValue=1;}if(f.cond){(e.cond=e.cond||{})[f.cond]=(e.cond[f.cond]||0)+qty;}return;}
     if(type==='P'&&f.value){M.parts.v+=f.value*qty;M.parts.q+=qty;M.has.partValue=1;}
   };
   const setCur=c=>{c=String(c||'').trim().toUpperCase();if(!M.cur&&/^[A-Z]{3}$/.test(c))M.cur=c;};
@@ -65,7 +66,7 @@ function buildMeta(text,fmt){
     const tag=(b,t)=>{const r=new RegExp('<'+t+'>([\\s\\S]*?)</'+t+'>','i').exec(b);return r?htmlDecode(r[1].trim()):'';};
     const re=/<ITEM>([\s\S]*?)<\/ITEM>/gi;let m;
     while((m=re.exec(text))){const b=m[1],q=tag(b,'QTY')||tag(b,'MINQTY'),price=parseNum(tag(b,'PRICE'));if(price)M.vcol='PRICE';setCur(tag(b,'CURRENCY'));
-      put(typeFromWord(tag(b,'ITEMTYPE')),tag(b,'ITEMID'),q===''?1:parseInt(q),{value:price,cond:condLabel(tag(b,'CONDITION'),tag(b,'SUBCONDITION')),loc:tag(b,'REMARKS').slice(0,40),date:parseDate(tag(b,'DATEADDED')),desc:tag(b,'ITEMNAME')});}
+      put(typeFromWord(tag(b,'ITEMTYPE')),tag(b,'ITEMID'),q===''?1:parseInt(q),{value:price,cond:condLabel(tag(b,'CONDITION'),tag(b,'SUBCONDITION')),date:parseDate(tag(b,'DATEADDED')),desc:tag(b,'ITEMNAME')});}
     return M;}
   const first=text.split(/\r?\n/).find(l=>l.trim())||'';
   const delim=[',','\t',';'].map(d=>[d,first.split(d).length]).sort((a,b)=>b[1]-a[1])[0][0];
@@ -80,7 +81,7 @@ function buildMeta(text,fmt){
     let id=g('id');if(I.variant>=0&&id)id=id+'-'+(g('variant')||'1');
     if(!id)id=r.map(c=>String(c).trim()).find(c=>/^[0-9A-Za-z]+-\d+$/.test(c)&&SETS[c])||'';
     const qs=g('qty');setCur(g('cur'));
-    put(type,id,qs===''?1:parseInt(qs),{value:parseNum(g('value')),vnew:parseNum(g('vnew')),vused:parseNum(g('vused')),cost:parseNum(g('cost')),date:parseDate(g('date')),cond:condLabel(g('cond'),g('sub')),loc:g('loc').slice(0,40),desc:g('desc')});
+    put(type,id,qs===''?1:parseInt(qs),{value:parseNum(g('value')),vnew:parseNum(g('vnew')),vused:parseNum(g('vused')),cost:parseNum(g('cost')),date:parseDate(g('date')),cond:condLabel(g('cond'),g('sub')),desc:g('desc')});
   }
   return M;
 }
@@ -198,9 +199,11 @@ let cxRange='all',cxView='total',cxSel=null,cxSearch='',cxTheme='all',cxShowAll=
 .cx-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:4px 24px}
 details.cx-th{background:#05131D;border:2px solid #6C6E68;border-radius:8px;padding:8px 10px;margin:6px 0}details.cx-th summary{cursor:pointer;font-weight:700}
 .cx-miss{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.cx-miss button{background:#6B5A5A;color:#F2F3F2;font-weight:600;font-size:12px;margin:0;padding:5px 8px}
-.cx input::placeholder{color:#E0D8D8}.cx-figmeta,.cx-figmeta .figmeta{color:#D5D7D3;margin-top:2px}.modal .figmeta{margin:2px 0 8px;font-size:14px}
+.cx input::placeholder{color:#E0D8D8}.cx-incl{font-style:italic;color:#C9CCC6}.cx-tag{font-size:10.5px;color:#B9BDB6;white-space:normal;line-height:1.2;margin-top:2px}.modal .cx-incl{color:#EDEEEC}
+.cx-figmeta,.cx-figmeta .figmeta{color:#D5D7D3;margin-top:2px}.modal .figmeta{margin:2px 0 8px;font-size:14px}
 .cx-mval input{width:110px;background:#05131D;color:#F2F3F2;border:1px solid #A5CA18;border-radius:6px;padding:6px}.cx-mval button{padding:6px 10px}
-@media (max-width:600px){.cx-tiles{grid-template-columns:1fr 1fr;gap:8px}.cx-tile{padding:8px 9px}.cx-tile .v{font-size:19px}.cx .hide-sm{display:none}table.cx-t{min-width:0;font-size:12px}.cx-t td,.cx-t th{padding:6px 3px}.cx-t .r{white-space:normal}.cx-t .small{white-space:nowrap}}
+.cx-t td.cx-nm{min-width:180px}.cx-fnm{line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.cx-fn{font-size:11px;line-height:1.25;color:#C9CCC6;margin-top:2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis}.cx-fn .cx-figmeta,.cx-fn .figmeta,.cx-fn .cx-figmeta *{display:inline;margin:0;font-size:inherit;color:inherit}.cx-t .cx-tag{white-space:nowrap}
+@media (max-width:600px){.cx-tiles{grid-template-columns:1fr 1fr;gap:8px}.cx-tile{padding:8px 9px}.cx-tile .v{font-size:19px}.cx .hide-sm{display:none}table.cx-t{min-width:0;font-size:12px}.cx-t td,.cx-t th{padding:6px 3px}.cx-t .r{white-space:normal}.cx-t .r .small{white-space:nowrap}}
 .cx .show-sm{display:none}@media (max-width:600px){.cx .show-sm{display:inline}}`;document.head.appendChild(st);})();
 const tile=(v,l,d,t)=>`<div class="cx-tile ${t?'t'+t:''}"><div class="v">${v}</div><div class="l">${l}</div>${d?`<div class="d">${d}</div>`:''}</div>`;
 const table=(cols,rows,rAlign)=>`<div class="cx-tw"><table class="cx-t"><thead><tr>${cols.map((c,i)=>`<th class="${rAlign&&rAlign[i]?'r':''}">${c}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
@@ -218,11 +221,28 @@ function figMap(o){
 function figCounts(F){let total=0,loose=0;for(const id in F){total+=F[id].qty||0;loose+=Math.min(F[id].loose||0,F[id].qty||0);}return {total,loose,inSets:total-loose,uniq:Object.keys(F).length};}
 const figMeta=id=>{if(typeof figMetaTxt!=='function')return '';try{return figMetaTxt(id)||'';}catch(e){return '';}};
 const figFacts=id=>(typeof FIGMETA!=='undefined'&&FIGMETA&&FIGMETA[id])||null; // [parts, first year, first set] (read-only, for the Year/Pieces columns)
+// Fig values are DISPLAY ONLY. In-set figs are part of their set's value, and no fig value is ever added to totals, tiles,
+// the chart, value history, movers, theme totals or StudValue.summary (those all sum sets only).
+// Order: your own estimate (studUserValues 'fig:<id>') > upload columns for that fig id (value, value new/used) > prices.json "figs" map
+// (optional, same shape as "sets": {"fig-000020":{"new":..,"used":..,"date":..}}; ignored if absent). New vs used follows the parent
+// set's condition (sealed -> new), else the fig's own condition, else used.
+function figBasis(id,f){const par=(f&&f.from||[]).find(k=>owned&&owned[k]);if(par&&condOf(par))return basisOf(par);
+  const e=META&&META.figs&&META.figs[id],c=e&&e.cond?topKey(e.cond):null;return c&&/sealed|new/i.test(c)?'new':'used';}
+function figValueOf(id,f){
+  const u=!DEMO&&USERV['fig:'+id];if(u&&u.v)return {v:u.v,cur:u.cur||mainCur(),src:'your entry',date:u.d,kind:'user'};
+  const e=META&&META.figs&&META.figs[id],b=figBasis(id,f);
+  if(e&&e.vq)return {v:e.v/e.vq,cur:META.cur||'USD',src:`your ${META.fmt} file`,date:META.loaded,kind:'file'};
+  if(e&&(e.vn||e.vu)){const v=b==='new'?(e.vn||e.vu):(e.vu||e.vn);return {v,cur:META.cur||'USD',src:`your ${META.fmt} file (value ${v===e.vn?'new':'used'})`,date:META.loaded,kind:'file',basis:v===e.vn?'new':'used'};}
+  const F=PRICES&&PRICES.figs&&typeof PRICES.figs==='object'?PRICES.figs:null,p=F&&F[id];
+  if(p&&typeof p==='object'){const nv=parseNum(p.new),uv=parseNum(p.used),v=b==='new'?(nv||uv):(uv||nv);
+    if(v)return {v,cur:PRICES.currency||'USD',src:PRICES.source||'prices.json',date:p.date||PRICES.updated,kind:'prices',basis:v===nv?'new':'used',example:!!PRICES.example};}
+  return null;
+}
 const inSetNote=f=>{const fr=(f.from||[]).map(sn);if(!fr.length)return '';return 'in set '+fr.slice(0,2).join(', ')+(fr.length>2?` +${fr.length-2} more`:'');};
 
 // ---------- main render ----------
 function collectionList(o){return Object.keys(o||{}).filter(k=>SETS[k]).map(k=>{const s=SETS[k],e=META&&META.sets[k];
-  return {num:k,name:s[0],year:s[1],tid:s[2],theme:rootTheme(s[2]),sub:setTheme(k),parts:s[3],qty:o[k],val:valueOf(k),cost:e&&e.cq?e.c/e.cq:null,date:e?e.d:null,cond:condOf(k),loc:e&&Object.keys(e.loc).length?Object.keys(e.loc).join(', '):null};});}
+  return {num:k,name:s[0],year:s[1],tid:s[2],theme:rootTheme(s[2]),sub:setTheme(k),parts:s[3],qty:o[k],val:valueOf(k),cost:e&&e.cq?e.c/e.cq:null,date:e?e.d:null,cond:condOf(k)};});}
 function cxRender(o){
   const board=document.getElementById('board'),ms=document.getElementById('mysets');if(!board||!ms)return;
   PH=buildPH(Object.keys(o||{}).filter(k=>SETS[k]));
@@ -266,8 +286,6 @@ function snapshotHTML(list,cur){
   h+=`<div><h3>By era</h3>${bars(decE.map(([d,n])=>[d+'s',n]),Math.max(...decE.map(e=>e[1])),nSets)}</div>`;
   if(META&&META.has.cond){const c={};list.forEach(s=>{const k=s.cond||'Not listed';c[k]=(c[k]||0)+s.qty;});const cE=Object.entries(c).sort((x,y)=>y[1]-x[1]);
     h+=`<div><h3>Condition</h3>${bars(cE,cE[0][1],nSets)}</div>`;}
-  if(META&&META.has.loc){const c={};list.forEach(s=>{const k=s.loc||'Not listed';c[k]=(c[k]||0)+s.qty;});const cE=Object.entries(c).sort((x,y)=>y[1]-x[1]).slice(0,10);
-    h+=`<div><h3>Storage</h3>${bars(cE,cE[0][1],nSets)}</div>`;}
   return h+'</div>';
 }
 function themeProgressHTML(list){
@@ -373,9 +391,10 @@ function renderAll(){
   const rows=list.map(s=>({type:'Set',...s})).concat(Object.entries(figs).map(([id,f])=>{const m=META&&META.figs[id];
     const lo=Math.min(f.loose||0,f.qty||0),ins=(f.qty||0)-lo,note=inSetNote(f);
     const ff=figFacts(id);
+    const fv=figValueOf(id,f);
     return {type:'Minifig',num:id,name:f.name||id,theme:f.theme||'Other',year:ff&&ff[1]||null,parts:ff&&ff[0]||null,qty:f.qty,meta:figMeta(id),parent:(f.from||[]).find(k=>owned&&owned[k])||null,
       note:note?(lo?`${lo} loose · ${ins} ${note}`:note):'',
-      val:m&&m.vq?{v:m.v/m.vq,cur:META.cur||'USD',src:'your file'}:null};}));
+      val:fv,inSet:ins>0,allInSet:ins>0&&!lo};}));
   if(!rows.length){el.innerHTML='';return;}
   const has=META&&META.has||{},themes=[...new Set(rows.map(r=>r.theme))].sort();
   const q=cxSearch.trim().toLowerCase(),f=rows.filter(r=>(cxTheme==='all'||r.theme===cxTheme)&&(!q||(r.num+' '+r.name).toLowerCase().includes(q)))
@@ -385,10 +404,13 @@ function renderAll(){
     const p=r.parent&&SETS[r.parent];if(p)return [rootTheme(p[2]),0,p[1],r.parent,1,r.num];
     return [r.theme,1,0,'',1,r.num];}
   const LIM=50,shown=cxShowAll?f:f.slice(0,LIM),anyVal=rows.some(r=>r.val);
-  const cols=['#','Name','Theme','Year','Pieces','Qty'].concat(has.cond?['Condition']:[],has.loc?['Location']:[],has.date?['Acquired']:[],has.cost?['Paid']:[],anyVal?['Est. value']:[]);
+  const cols=['#','Name','Theme','Year','Pieces','Qty'].concat(has.cond?['Condition']:[],has.date?['Acquired']:[],has.cost?['Paid']:[],anyVal?['Est. value']:[]);
   const right=cols.map(c=>['Year','Pieces','Qty','Paid','Est. value'].includes(c));
-  const tr=r=>`<tr class="click" ${r.type==='Set'?`data-open="${E(r.num)}"`:`data-fig="${E(r.num)}"`}><td>${E(sn(r.num))}</td><td>${E(r.name)}${r.type==='Minifig'?` <span class="muted small">minifig${r.note?' · '+E(r.note):''}</span>${r.meta?`<div class="small cx-figmeta">${r.meta}</div>`:''}`:''}</td><td>${E(r.theme)}</td><td class="r">${r.year||'—'}</td><td class="r">${r.parts!=null?r.parts.toLocaleString():'—'}</td><td class="r">${r.qty}</td>`+
-    (has.cond?`<td>${E(r.cond||'—')}</td>`:'')+(has.loc?`<td>${E(r.loc||'—')}</td>`:'')+(has.date?`<td>${r.date?fmtD(r.date):'—'}</td>`:'')+(has.cost?`<td class="r">${r.cost?money(r.cost,cur):'—'}</td>`:'')+(anyVal?`<td class="r">${r.val?money(r.val.v,r.val.cur):'—'}</td>`:'')+'</tr>';
+  // In-set fig values: muted italic + tag, never summed. Loose figs show their value as before.
+  const valCell=r=>{if(!r.val)return '—';const t=money(r.val.v,r.val.cur);if(r.type!=='Minifig'||!r.inSet)return t;
+    return `<span class="cx-incl">${t}</span><div class="cx-tag">${r.allInSet?'Included in set value':'in-set copies included in set value'}</div>`;};
+  const tr=r=>`<tr class="click" ${r.type==='Set'?`data-open="${E(r.num)}"`:`data-fig="${E(r.num)}"`}><td>${E(sn(r.num))}</td><td class="cx-nm">${r.type==='Minifig'?`<div class="cx-fnm" title="${E(r.name)}">${E(r.name)}</div>`:E(r.name)}${r.type==='Minifig'?`<div class="cx-fn" title="${E(String(r.meta||'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim())}">minifig${r.note?' · '+E(r.note):''}${r.meta?' · <span class="cx-figmeta">'+r.meta+'</span>':''}</div>`:''}</td><td>${E(r.theme)}</td><td class="r">${r.year||'—'}</td><td class="r">${r.parts!=null?r.parts.toLocaleString():'—'}</td><td class="r">${r.qty}</td>`+
+    (has.cond?`<td>${E(r.cond||'—')}</td>`:'')+(has.date?`<td>${r.date?fmtD(r.date):'—'}</td>`:'')+(has.cost?`<td class="r">${r.cost?money(r.cost,cur):'—'}</td>`:'')+(anyVal?`<td class="r">${valCell(r)}</td>`:'')+'</tr>';
   el.innerHTML=`<h2 id="cx-all">All my stuff</h2><p class="cx-cap">Every set and minifig in your upload, including the minifigs that come in your sets.${anyVal?' Values are estimates; tap a set for its source and date.':''}</p>
 <div class="cx-ctl"><input type="search" id="cx-q" placeholder="Set number or name" value="${E(cxSearch)}"><select id="cx-thf"><option value="all">All themes</option>${themes.map(t=>`<option ${t===cxTheme?'selected':''}>${E(t)}</option>`).join('')}</select><span class="muted small">${f.length} of ${rows.length}</span></div>
 ${cols.length>6?'<p class="muted small show-sm">Swipe the table sideways for more columns.</p>':''}${table(cols,shown.map(tr),right)}${f.length>LIM?`<button id="cx-more">${cxShowAll?'Show fewer':'Show all '+f.length}</button>`:''}`;
@@ -404,18 +426,26 @@ function openFig(id){
   const lo=Math.min(f.loose||0,f.qty||0),ins=(f.qty||0)-lo,from=(f.from||[]).filter(k=>SETS[k]);
   const img=typeof figImg==='function'?figImg(id):(/^fig-/i.test(id)?`https://cdn.rebrickable.com/media/sets/${encodeURIComponent(id)}.jpg`:`https://img.bricklink.com/ItemImage/MN/0/${encodeURIComponent(id)}.png`);
   const link=/^fig-/i.test(id)?['Rebrickable',`https://rebrickable.com/minifigs/${encodeURIComponent(id)}/`]:['BrickLink',`https://www.bricklink.com/v2/catalog/catalogitem.page?M=${encodeURIComponent(id)}`];
-  const m=META&&META.figs&&META.figs[id],val=m&&m.vq?money(m.v/m.vq,META.cur||'USD')+' estimate · your file':'';
+  const fv=figValueOf(id,f),inSet=ins>0;
+  let valH='';
+  if(fv){const t=`${money(fv.v,fv.cur)} estimate${fv.basis?` (${E(fv.basis)})`:''} · ${E(fv.src)}${fv.date?' · '+fmtD(fv.date):''}${fv.example&&!/example/i.test(fv.src)?' · <b>EXAMPLE DATA</b>':''}`;
+    valH=inSet?`<p class="cx-incl">${t}</p><p class="muted small">${lo?`The ${ins} in-set ${ins===1?'copy is':'copies are'}`:'This minifig is'} included in ${from.length===1?`${E(sn(from[0]))} ${E(SETS[from[0]][0])}'s`:'your sets\''} value, so it isn't added to your totals.</p>`:`<p>${t}</p>`;}
+  const mine=!DEMO&&(f.qty||0)>0,uv=USERV['fig:'+id];
+  const ownH=mine?`<div class="cx-mval"><label class="muted small">Your own estimate (${mainCur()}) <input type="number" min="0" step="0.01" inputmode="decimal" id="cx-fuv" value="${uv?uv.v:''}"></label> <button id="cx-fuvs">Save</button>${uv?' <button id="cx-fuvc" style="background:#6B5A5A;color:#F2F3F2">Clear</button>':''}</div>`:'';
   const bg=document.createElement('div');bg.className='modalbg';bg.id='setmodal';
   bg.innerHTML=`<div class="modal" role="dialog" aria-modal="true" aria-label="${E(f.name||id)}"><button class="mclose" aria-label="Close">✕</button>
 <img class="mimg" alt="${E(f.name||id)}" src="${img}" onerror="this.outerHTML='<div class=&quot;setph&quot;>🙂</div>'">
 <div class="mbody"><h2>${E(f.name||id)}</h2><div class="meta"><span>${E(id)}</span><span>${E(f.theme||'Other')}</span><span>You own ×${f.qty}${lo&&ins?` (${lo} loose, ${ins} in sets)`:lo?' loose':''}</span></div>
 ${figMeta(id)}
 ${from.length?`<h4>In your sets</h4><div class="cx-miss">${from.map(k=>`<button data-open="${E(k)}">${E(sn(k))} ${E(SETS[k][0])} (${SETS[k][1]})</button>`).join('')}</div>`:''}
-${val?`<h4>Value</h4><p>${E(val)}</p>`:''}
+
+${fv||ownH?`<h4>Value</h4>${valH}${ownH}`:''}
 <a class="btn" href="${link[1]}" target="_blank" rel="noopener">View on ${link[0]}</a></div></div>`;
   const close=()=>{bg.remove();document.removeEventListener('keydown',esc_);},esc_=e=>{if(e.key==='Escape')close();};
   bg.onclick=e=>{if(e.target===bg)close();};document.body.appendChild(bg);bg.querySelector('.mclose').onclick=close;document.addEventListener('keydown',esc_);
   bg.querySelectorAll('[data-open]').forEach(x=>x.onclick=()=>{close();openSet(x.dataset.open);});
+  const sb=document.getElementById('cx-fuvs');if(sb)sb.onclick=()=>{const n=parseNum(document.getElementById('cx-fuv').value);if(n)USERV['fig:'+id]={v:n,cur:mainCur(),d:today()};else delete USERV['fig:'+id];sv(LS.user,USERV);close();render(owned);openFig(id);};
+  const cb=document.getElementById('cx-fuvc');if(cb)cb.onclick=()=>{delete USERV['fig:'+id];sv(LS.user,USERV);close();render(owned);openFig(id);};
 }
 function bulkHTML(){
   const ex=(typeof extras!=='undefined'&&extras)||{};const loose=ex.looseParts||0,fp=ex.figParts||0;if(!loose&&!fp)return '';
@@ -444,9 +474,9 @@ document.addEventListener('click',e=>{if(e.target&&e.target.id==='cx-reset'){if(
 const _open=openSet;openSet=function(num){_open(num);try{
   const body=document.querySelector('#setmodal .mbody');if(!body)return;const h4=[...body.querySelectorAll('h4')].find(x=>x.textContent==='Value');const p=h4&&h4.nextElementSibling;if(!p)return;
   const v=valueOf(num),e=META&&META.sets[num],mine=typeof owned!=='undefined'&&owned[num];
-  let h='';if(v)h+=`<p><b>${money(v.v,v.cur)}</b> estimate${v.basis?` (${E(v.basis)})`:''} · ${E(v.src)}${v.date?' · '+fmtD(v.date):''}${v.example?' · <b>EXAMPLE DATA</b>':''}</p>`;
+  let h='';if(v)h+=`<p><b>${money(v.v,v.cur)}</b> estimate${v.basis?` (${E(v.basis)})`:''} · ${E(v.src)}${v.date?' · '+fmtD(v.date):''}${v.example&&!/example/i.test(v.src)?' · <b>EXAMPLE DATA</b>':''}</p>`;
   else h+='<p class="muted">No value yet. Price feed coming soon.</p>';
-  const facts=[];if(e){const c=topKey(e.cond);if(c)facts.push('Condition: '+E(c));if(Object.keys(e.loc).length)facts.push('Location: '+E(Object.keys(e.loc).join(', ')));if(e.d)facts.push('Acquired: '+fmtD(e.d));if(e.cq)facts.push('Paid: '+money(e.c/e.cq,META.cur||'USD'));}
+  const facts=[];if(e){const c=topKey(e.cond);if(c)facts.push('Condition: '+E(c));if(e.d)facts.push('Acquired: '+fmtD(e.d));if(e.cq)facts.push('Paid: '+money(e.c/e.cq,META.cur||'USD'));}
   if(facts.length)h+=`<p class="muted small">${facts.join(' · ')}</p>`;
   if(mine&&!DEMO)h+=`<div class="cx-mval"><label class="muted small">Your own estimate (${mainCur()}) <input type="number" min="0" step="0.01" inputmode="decimal" id="cx-uv" value="${USERV[num]?USERV[num].v:''}"></label> <button id="cx-uvs">Save</button>${USERV[num]?' <button id="cx-uvc" style="background:#6B5A5A;color:#F2F3F2">Clear</button>':''}</div>`;
   const d=document.createElement('div');d.innerHTML=h;p.replaceWith(d);
