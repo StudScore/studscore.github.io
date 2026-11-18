@@ -318,7 +318,7 @@ function goTab(t){if(location.hash!=='#'+t)location.hash=t;else showTab(t);}
 })();
 // Swipe left/right on phones to change tabs (added by Money). Ignores swipes that start in something that scrolls sideways
 // (tables, the tab bar), on form fields or the chart, or while a popup is open. No wrap-around at the first or last tab.
-(function(){if(!('ontouchstart' in window))return;let sx=0,sy=0,st=0,ok=false;
+(function(){let sx=0,sy=0,st=0,ok=false;
   const sideScroller=el=>{for(;el&&el!==document.body;el=el.parentElement){if(el.id==='tabs')return true;
     if(el.scrollWidth>el.clientWidth+2){const o=getComputedStyle(el).overflowX;if(o==='auto'||o==='scroll')return true;}}return false;};
   document.addEventListener('touchstart',e=>{ok=false;if(e.touches.length!==1)return;const t=e.target;
@@ -330,7 +330,21 @@ function goTab(t){if(location.hash!=='#'+t)location.hash=t;else showTab(t);}
     const i=TABS.indexOf(curTab),n=dx<0?i+1:i-1;if(n<0||n>=TABS.length)return;
     const t=TABS[n];goTab(t);const panel=document.getElementById('tab-'+t);
     if(panel){panel.classList.remove('swipe-l','swipe-r');void panel.offsetWidth;panel.classList.add(dx<0?'swipe-l':'swipe-r');}},{passive:true});
-  const css=document.createElement('style');css.textContent='@keyframes swl{from{transform:translateX(28px);opacity:.4}to{transform:none;opacity:1}}@keyframes swr{from{transform:translateX(-28px);opacity:.4}to{transform:none;opacity:1}}.swipe-l{animation:swl .18s ease-out}.swipe-r{animation:swr .18s ease-out}@media (prefers-reduced-motion:reduce){.swipe-l,.swipe-r{animation:none}}';document.head.appendChild(css);
+  // Two-finger trackpad swipes on PCs come in as sideways wheel events. Add them up, switch once per gesture,
+  // then wait for the momentum to stop. overscroll-behavior-x stops the browser from treating a right swipe as Back.
+  let acc=0,lock=false,quiet=0;
+  const canScrollX=(el,dx)=>{for(;el&&el!==document.body&&el!==document.documentElement;el=el.parentElement){
+    if(el.scrollWidth>el.clientWidth+2){const o=getComputedStyle(el).overflowX;if(o==='auto'||o==='scroll'){
+      if(dx>0&&el.scrollLeft+el.clientWidth<el.scrollWidth-1)return true;if(dx<0&&el.scrollLeft>0)return true;}}}return false;};
+  window.addEventListener('wheel',e=>{if(e.ctrlKey)return;const ax=Math.abs(e.deltaX),ay=Math.abs(e.deltaY);
+    clearTimeout(quiet);quiet=setTimeout(()=>{lock=false;acc=0;},260);
+    if(ax<=ay*1.2){acc=0;return;}
+    if(document.querySelector('[aria-modal=true]')||canScrollX(e.target,e.deltaX)){acc=0;return;}
+    e.preventDefault();if(lock)return;acc+=e.deltaX;if(Math.abs(acc)<90)return;
+    const dir=acc>0?1:-1;acc=0;lock=true;const i=TABS.indexOf(curTab),n=i+dir;if(n<0||n>=TABS.length)return;
+    const t=TABS[n];goTab(t);const panel=document.getElementById('tab-'+t);
+    if(panel){panel.classList.remove('swipe-l','swipe-r');void panel.offsetWidth;panel.classList.add(dir>0?'swipe-l':'swipe-r');}},{passive:false});
+  const css=document.createElement('style');css.textContent='@keyframes swl{from{transform:translateX(28px);opacity:.4}to{transform:none;opacity:1}}@keyframes swr{from{transform:translateX(-28px);opacity:.4}to{transform:none;opacity:1}}.swipe-l{animation:swl .18s ease-out}.swipe-r{animation:swr .18s ease-out}html,body{overscroll-behavior-x:none}@media (prefers-reduced-motion:reduce){.swipe-l,.swipe-r{animation:none}}';document.head.appendChild(css);
 })();
 // Put dynamically added sections into their tabs. collection.js adds #cx-a (snapshot, theme progress, value history) before #mysets
 // and #cx-b (All my stuff, bulk parts, sources) after #myfigs; share.js adds its button after #demo. Runs after every render.
