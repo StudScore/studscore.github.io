@@ -316,6 +316,22 @@ function goTab(t){if(location.hash!=='#'+t)location.hash=t;else showTab(t);}
     if(n){e.preventDefault();goTab(n);document.getElementById('tabbtn-'+n).focus();}});
   window.addEventListener('hashchange',()=>routeHash(false));
 })();
+// Swipe left/right on phones to change tabs (added by Money). Ignores swipes that start in something that scrolls sideways
+// (tables, the tab bar), on form fields or the chart, or while a popup is open. No wrap-around at the first or last tab.
+(function(){if(!('ontouchstart' in window))return;let sx=0,sy=0,st=0,ok=false;
+  const sideScroller=el=>{for(;el&&el!==document.body;el=el.parentElement){if(el.id==='tabs')return true;
+    if(el.scrollWidth>el.clientWidth+2){const o=getComputedStyle(el).overflowX;if(o==='auto'||o==='scroll')return true;}}return false;};
+  document.addEventListener('touchstart',e=>{ok=false;if(e.touches.length!==1)return;const t=e.target;
+    if(document.querySelector('[aria-modal=true]'))return;
+    if(t.closest&&t.closest('input,textarea,select,canvas,[contenteditable],.no-swipe'))return;
+    if(sideScroller(t))return;const p=e.touches[0];sx=p.clientX;sy=p.clientY;st=Date.now();ok=true;},{passive:true});
+  document.addEventListener('touchend',e=>{if(!ok)return;ok=false;const p=e.changedTouches[0],dx=p.clientX-sx,dy=p.clientY-sy;
+    if(Date.now()-st>700||Math.abs(dx)<60||Math.abs(dx)<Math.abs(dy)*1.8)return;
+    const i=TABS.indexOf(curTab),n=dx<0?i+1:i-1;if(n<0||n>=TABS.length)return;
+    const t=TABS[n];goTab(t);const panel=document.getElementById('tab-'+t);
+    if(panel){panel.classList.remove('swipe-l','swipe-r');void panel.offsetWidth;panel.classList.add(dx<0?'swipe-l':'swipe-r');}},{passive:true});
+  const css=document.createElement('style');css.textContent='@keyframes swl{from{transform:translateX(28px);opacity:.4}to{transform:none;opacity:1}}@keyframes swr{from{transform:translateX(-28px);opacity:.4}to{transform:none;opacity:1}}.swipe-l{animation:swl .18s ease-out}.swipe-r{animation:swr .18s ease-out}@media (prefers-reduced-motion:reduce){.swipe-l,.swipe-r{animation:none}}';document.head.appendChild(css);
+})();
 // Put dynamically added sections into their tabs. collection.js adds #cx-a (snapshot, theme progress, value history) before #mysets
 // and #cx-b (All my stuff, bulk parts, sources) after #myfigs; share.js adds its button after #demo. Runs after every render.
 function placeSections(){try{
