@@ -282,8 +282,8 @@ function snapshotHTML(list,cur){
   h+='</div>';
   h+=themeProgressHTML(list);
   h+=`<div class="cx-cols"><div><h3>By theme</h3>${bars(thE.slice(0,10).map(([k,t])=>[k,t.n,`${t.p.toLocaleString()} pcs${t.v?' · '+money(t.v,cur,1):''}`]),thE.length?thE[0][1].n:0,nSets)}${thE.length>10?`<p class="muted small">+${thE.length-10} more themes</p>`:''}</div>`;
-  const dec={};list.forEach(s=>{const d=Math.floor(s.year/10)*10;dec[d]=(dec[d]||0)+s.qty;});const decE=Object.entries(dec).sort((x,y)=>x[0]-y[0]);
-  h+=`<div><h3>By era</h3>${bars(decE.map(([d,n])=>[d+'s',n]),Math.max(...decE.map(e=>e[1])),nSets)}</div>`;
+  const dec={};list.forEach(s=>{const d=Math.floor(s.year/10)*10;const t=dec[d]||(dec[d]={n:0,p:0,v:0});t.n+=s.qty;t.p+=s.parts*s.qty;if(s.val&&s.val.cur===cur)t.v+=s.val.v*s.qty;});const decE=Object.entries(dec).sort((x,y)=>x[0]-y[0]);
+  h+=`<div><h3>By era</h3>${bars(decE.map(([d,t])=>[d+'s',t.n,`${t.p.toLocaleString()} pcs${t.v?' · '+money(t.v,cur,1):''}`]),Math.max(...decE.map(e=>e[1].n)),nSets)}</div>`;
   if(META&&META.has.cond){const c={};list.forEach(s=>{const k=s.cond||'Not listed';c[k]=(c[k]||0)+s.qty;});const cE=Object.entries(c).sort((x,y)=>y[1]-x[1]);
     h+=`<div><h3>Condition</h3>${bars(cE,cE[0][1],nSets)}</div>`;}
   return h+'</div>';
