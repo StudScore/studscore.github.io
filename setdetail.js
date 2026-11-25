@@ -1,8 +1,10 @@
 // ---- Set / fig detail (added by Money): BrickLink + Brick Owl numbers on each minifig,
-// and a value-over-time chart on each set and fig popup.
+// a row of catalog link chips on each set and fig popup, and a value-over-time chart.
 // Hooks the same way community.js does: wraps figMetaTxt, render, and watches the popup.
 // Does not edit collection.js or lore.js. Does not change community prices.
 // Fig numbers come from figids.js (Rebrickable set_mappings.csv). Missing IDs are omitted, never invented.
+// Cards and All my stuff keep the plain ID line; popups turn those IDs into link chips
+// (and move the bottom Rebrickable button up into the same row).
 // Chart sources, first one with two or more points wins: checkpoints saved on this device
 // (studSnapshots, skipped in the demo), then BrickLink prices saved by blsync.js, then ./prices.json history, then community.json.
 (function(){
@@ -135,11 +137,54 @@ function historyHTML(id,kind,width){
   return h;
 }
 
-function catalogLinks(id,kind){
-  const rec=idsOf(id);const out=[];
-  if(kind==='fig'&&rec.bl)out.push(`<a class="btn sd-link" href="https://www.bricklink.com/v2/catalog/catalogitem.page?M=${encodeURIComponent(rec.bl)}" target="_blank" rel="noopener">View on BrickLink</a>`);
-  if(rec.bo)out.push(`<a class="btn sd-link" href="https://www.brickowl.com/boid/${encodeURIComponent(rec.bo)}" target="_blank" rel="noopener">View on Brick Owl</a>`);
-  return out.join(' ');
+// Catalog URLs. Verified 2026-11-24:
+//   BrickLink minifig ?M=aqu026 and set ?S=75192-1
+//   Brick Owl /boid/349447 redirects to the minifig page; sets have no ID map, so search/catalog?query=
+//   BrickEconomy /minifig/aqu026/ and /set/75192-1/ (trailing slash required on sets)
+//   Rebrickable /minifigs/fig-…/ and /sets/75192-1/ (existing site links)
+function catalogItems(id,kind){
+  const items=[];
+  if(!id)return items;
+  if(kind==='fig'){
+    const rec=idsOf(id);
+    const fig=rec.fig||(/^fig-/i.test(id)?id:null);
+    if(rec.bl)items.push({label:'BrickLink '+rec.bl,href:'https://www.bricklink.com/v2/catalog/catalogitem.page?M='+encodeURIComponent(rec.bl)});
+    if(rec.bo)items.push({label:'Brick Owl '+rec.bo,href:'https://www.brickowl.com/boid/'+encodeURIComponent(rec.bo)});
+    if(rec.bl)items.push({label:'BrickEconomy',href:'https://www.brickeconomy.com/minifig/'+encodeURIComponent(rec.bl)+'/'});
+    if(fig)items.push({label:'Rebrickable',href:'https://rebrickable.com/minifigs/'+encodeURIComponent(fig)+'/'});
+  }else{
+    const num=String(id);
+    items.push({label:'BrickLink '+num,href:'https://www.bricklink.com/v2/catalog/catalogitem.page?S='+encodeURIComponent(num)});
+    items.push({label:'Brick Owl '+num,href:'https://www.brickowl.com/search/catalog?query='+encodeURIComponent(num)});
+    items.push({label:'BrickEconomy',href:'https://www.brickeconomy.com/set/'+encodeURIComponent(num)+'/'});
+    items.push({label:'Rebrickable',href:'https://rebrickable.com/sets/'+encodeURIComponent(num)+'/'});
+  }
+  return items;
+}
+function catalogChipsHTML(id,kind){
+  const items=catalogItems(id,kind);
+  if(!items.length)return '';
+  return `<div class="chips sd-chips">${items.map(it=>`<a class="chip sd-chip" href="${E(it.href)}" target="_blank" rel="noopener">${E(it.label)}</a>`).join('')}</div>`;
+}
+function removeMovedCatalogBtns(body,items){
+  if(!body)return;
+  const hrefs=new Set((items||[]).map(it=>(it.href||'').toLowerCase()));
+  [...body.querySelectorAll('a.btn')].forEach(a=>{
+    const href=(a.getAttribute('href')||'').toLowerCase();
+    const t=(a.textContent||'').replace(/\s+/g,' ').trim();
+    const view=/^View on (Rebrickable|BrickLink|Brick Owl|BrickEconomy)$/i.test(t);
+    const match=[...hrefs].some(h=>h&&href&&(h===href||href.replace(/\/$/,'')===h.replace(/\/$/,'')));
+    if(view||match)a.remove();
+  });
+  body.querySelectorAll('.sd-links').forEach(el=>{if(!el.querySelector('a'))el.remove();});
+}
+function placeChipRow(body,html){
+  if(!body||!html||body.querySelector('.sd-chips'))return;
+  const old=body.querySelector('.figids');
+  if(old){old.insertAdjacentHTML('beforebegin',html);old.remove();return;}
+  const meta=body.querySelector('.meta');
+  if(meta){meta.insertAdjacentHTML('afterend',html);return;}
+  body.insertAdjacentHTML('afterbegin',html);
 }
 
 function modalInfo(modal){
@@ -164,13 +209,11 @@ function enhanceModal(modal){
   const info=modalInfo(modal);if(!info)return;
   const body=modal.querySelector('.mbody');if(!body)return;
   modal.dataset.sd='1';
-  // Fig numbers: figMetaTxt wrap already inserted .figids. If a popup was built
-  // before that wrap (shouldn't happen), add them under .meta.
-  if(info.kind==='fig'&&!body.querySelector('.figids')){
-    const meta=body.querySelector('.meta');
-    const html=figIdsHTML(info.id);
-    if(html&&meta)meta.insertAdjacentHTML('afterend',html);
-  }
+  // Catalog chips near the top (after .meta). In fig popups they replace the
+  // plain BrickLink / Brick Owl ID line. The bottom "View on …" button moves up into this row.
+  const items=catalogItems(info.id,info.kind);
+  placeChipRow(body,catalogChipsHTML(info.id,info.kind));
+  removeMovedCatalogBtns(body,items);
   // Chart: after the Value block (h4 + following content), or at the end of the body.
   if(!body.querySelector('.sd-chart, .sd-empty')){
     const w=Math.max(260,(body.clientWidth||320)-8);
@@ -183,20 +226,6 @@ function enhanceModal(modal){
     }else{
       const btn=body.querySelector('a.btn');
       if(btn)btn.insertAdjacentElement('beforebegin',box);else body.appendChild(box);
-    }
-  }
-  // Extra catalog links, without duplicating the button that's already there.
-  const links=catalogLinks(info.id,info.kind);
-  if(links){
-    const have=[...body.querySelectorAll('a.btn')].map(a=>(a.getAttribute('href')||'').toLowerCase());
-    const wrap=document.createElement('div');wrap.className='sd-links';wrap.innerHTML=links;
-    [...wrap.querySelectorAll('a')].forEach(a=>{
-      const href=(a.getAttribute('href')||'').toLowerCase();
-      if(have.some(h=>h&&href&&(h===href||h.includes(href.split('?')[0].split('/').pop()||'__'))))a.remove();
-    });
-    if(wrap.querySelector('a')){
-      const last=body.querySelector('a.btn:last-of-type');
-      if(last)last.insertAdjacentElement('afterend',wrap);else body.appendChild(wrap);
     }
   }
 }
@@ -258,6 +287,9 @@ const css=document.createElement('style');css.textContent=`
 .setinfo .figids,.modal .figids{color:#EDEEEC}
 .modal .figids{margin:2px 0 8px;font-size:14px}
 .cx-fn .figids{display:inline;margin:0;font-size:inherit;color:inherit}
+.modal .sd-chips{margin:2px 0 10px}
+.modal a.chip.sd-chip{color:#F2F3F2;text-decoration:none;display:inline-block;line-height:1.4}
+.modal a.chip.sd-chip:hover,.modal a.chip.sd-chip:focus{color:#F2CD37}
 .sd-hist{margin:10px 0 4px}
 .sd-chart{background:#05131D;border:2px solid #6C6E68;border-radius:8px;padding:6px;margin:6px 0;touch-action:pan-y}
 .sd-svg{display:block;max-width:100%}
@@ -266,5 +298,5 @@ const css=document.createElement('style');css.textContent=`
 .sd-links .btn,.btn.sd-link{margin-top:8px}
 `;document.head.appendChild(css);
 
-if(typeof window!=='undefined')window.StudDetail={figIds:idsOf,figIdsHTML,itemPoints,enhanceModal,historyHTML,modalInfo};
+if(typeof window!=='undefined')window.StudDetail={figIds:idsOf,figIdsHTML,catalogItems,catalogChipsHTML,itemPoints,enhanceModal,historyHTML,modalInfo};
 })();
