@@ -4,7 +4,7 @@
 // Does not edit collection.js or lore.js. Does not change community prices.
 // Fig numbers come from figids.js (Rebrickable set_mappings.csv). Missing IDs are omitted, never invented.
 // Chart sources, first one with two or more points wins: checkpoints saved on this device
-// (studSnapshots, skipped in the demo), then ./prices.json history, then community.json.
+// (studSnapshots, skipped in the demo), then BrickLink prices saved by blsync.js, then ./prices.json history, then community.json.
 (function(){
 const E=s=>(typeof esc==='function'?esc:function(x){return String(x).replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));})(s==null?'':s);
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -50,6 +50,13 @@ function itemPoints(id){
     // de-dupe same day (keep last)
     const seen={};const uniq=[];pts.forEach(p=>{if(seen[p.d]!=null)uniq[seen[p.d]]=p;else{seen[p.d]=uniq.length;uniq.push(p);}});
     if(uniq.length>=2)return {pts:uniq,src:'checkpoints',cur,label:'Checkpoints saved on this device, '+fmtD(uniq[0].d)+' to '+fmtD(uniq[uniq.length-1].d)+'.'};
+  }
+  // 1b. BrickLink sold averages saved on this device by blsync.js (one per day it refreshed), unit price
+  if(!isDemo()&&window.StudBL&&typeof StudBL.history==='function'){
+    const key=/-\d+$/.test(id)?id:'fig:'+id;let bh=[];try{bh=StudBL.history(key)||[];}catch(e){}
+    const st=StudBL._state&&StudBL._state().P,o=st&&st[key],cur=(o&&((o.N&&o.N.cur)||(o.U&&o.U.cur)))||'USD';
+    const pts=bh.map(p=>({t:tOf(p.d),d:p.d,v:p.v}));
+    if(pts.length>=2)return {pts,src:'bricklink',cur,label:'BrickLink sold averages saved on this device, '+fmtD(pts[0].d)+' to '+fmtD(pts[pts.length-1].d)+'.'};
   }
   // 2. prices.json monthly history
   const rec=priceRec(id);
@@ -203,7 +210,7 @@ function paintChart(modal){
 }
 
 function enhanceSources(){
-  const ul=document.querySelector('#cx-sources ul');
+  const ul=document.querySelector('#cx-sources + ul, #cx-sources ul');
   if(!ul||ul.querySelector('.sd-src'))return;
   const li=document.createElement('li');li.className='sd-src';
   li.innerHTML='Minifig BrickLink and Brick Owl numbers: <a href="https://rebrickable.com/downloads/" target="_blank" rel="noopener">Rebrickable</a> set_mappings.csv. A number is shown only when Rebrickable lists it.';
@@ -259,5 +266,5 @@ const css=document.createElement('style');css.textContent=`
 .sd-links .btn,.btn.sd-link{margin-top:8px}
 `;document.head.appendChild(css);
 
-if(typeof window!=='undefined')window.StudDetail={figIds:idsOf,figIdsHTML,itemPoints,enhanceModal,historyHTML};
+if(typeof window!=='undefined')window.StudDetail={figIds:idsOf,figIdsHTML,itemPoints,enhanceModal,historyHTML,modalInfo};
 })();

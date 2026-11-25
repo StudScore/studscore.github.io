@@ -1,7 +1,7 @@
 // ---- Collection log (added by Cole): Collection Snapshot, Theme progress, Value History (stock-style chart, month lookup,
 // top movers, value checkpoints), All my stuff, Bulk and loose parts, Sources and caveats.
 // Everything runs on the collector's own upload, in the browser. No collection or price data ships with the site.
-// Value sources, in order: your own entry (set popup) > value/price columns in your upload > ./prices.json > nothing ("coming soon").
+// Value sources, in order: your own entry (set popup) > BrickLink with your own keys (blsync.js, when connected) > value/price columns in your upload > ./prices.json > nothing ("coming soon").
 // Value history: ./prices.json set histories if present, else dated snapshots saved in this browser each visit, else empty states.
 // ./prices.json (written by the price-feed job; optional, ignored if missing):
 //   {"source":"Brick Owl","source_url":"https://www.brickowl.com","currency":"GBP","updated":"2026-12-01",
@@ -94,6 +94,7 @@ const mainCur=()=>(META&&META.has&&META.has.value&&(META.cur||'USD'))||(PRICES&&
 function phLatest(k){if(!PH)return null;const col=PH._col[k];if(!col)return null;for(let i=PH.months.length-1;i>=0;i--){const v=parseNum(PH.months[i][col]);if(v)return {v,m:PH.months[i].month};}return null;}
 function valueOf(k){
   const u=!DEMO&&USERV[k];if(u&&u.v)return {v:u.v,cur:u.cur||mainCur(),src:'your entry',date:u.d,kind:'user'};
+  const bl=!DEMO&&window.StudBL&&StudBL.value(k,basisOf(k));if(bl)return bl; // BrickLink with your own keys (blsync.js)
   const e=META&&META.sets[k];
   if(e&&e.vq)return {v:e.v/e.vq,cur:META.cur||'USD',src:`your ${META.fmt} file (${META.vcol||'value'} column)`,date:META.loaded,kind:'file'};
   if(e&&(e.vn||e.vu)){const b=basisOf(k),v=b==='new'?(e.vn||e.vu):(e.vu||e.vn);return {v,cur:META.cur||'USD',src:`your ${META.fmt} file (value ${v===e.vn?'new':'used'})`,date:META.loaded,kind:'file',basis:v===e.vn?'new':'used'};}
@@ -231,6 +232,7 @@ function figBasis(id,f){const par=(f&&f.from||[]).find(k=>owned&&owned[k]);if(pa
 function figValueOf(id,f){
   const u=!DEMO&&USERV['fig:'+id];if(u&&u.v)return {v:u.v,cur:u.cur||mainCur(),src:'your entry',date:u.d,kind:'user'};
   const e=META&&META.figs&&META.figs[id],b=figBasis(id,f);
+  const bl=!DEMO&&window.StudBL&&StudBL.value('fig:'+id,b);if(bl)return bl; // BrickLink with your own keys (blsync.js)
   if(e&&e.vq)return {v:e.v/e.vq,cur:META.cur||'USD',src:`your ${META.fmt} file`,date:META.loaded,kind:'file'};
   if(e&&(e.vn||e.vu)){const v=b==='new'?(e.vn||e.vu):(e.vu||e.vn);return {v,cur:META.cur||'USD',src:`your ${META.fmt} file (value ${v===e.vn?'new':'used'})`,date:META.loaded,kind:'file',basis:v===e.vn?'new':'used'};}
   const F=PRICES&&PRICES.figs&&typeof PRICES.figs==='object'?PRICES.figs:null,p=F&&F[id];
