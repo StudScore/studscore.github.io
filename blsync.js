@@ -188,7 +188,7 @@ function blLine(it){
   if(!r||(!r.v&&!r.err))return connected()?'<span class="muted">BrickLink price: not looked up yet.</span>':'';
   if(!r.v)return `<span class="muted">BrickLink: no ${it.nu==='N'?'new':'used'} sales in the last 6 months.</span>`;
   const stale=Date.now()-r.t>STALE_MS;
-  return `BrickLink price, updated ${ago(r.t)}: <b>${money(r.v,r.cur)}</b> (${it.nu==='N'?'new':'used'}${r.n?`, ${r.n} sale${r.n===1?'':'s'}`:''})${stale?` <span class="bl-stale">${r.failT?'older than 6 hours, could not refresh':'older than 6 hours'}</span>`:''}`;
+  return `BrickLink price, updated ${ago(r.t)}: <b class="bl-price">${money(r.v,r.cur)}</b> (${it.nu==='N'?'new':'used'}${r.n?`, ${r.n} sale${r.n===1?'':'s'}`:''})${stale?` <span class="bl-stale">${r.failT?'older than 6 hours, could not refresh':'older than 6 hours'}</span>`:''}`;
 }
 function enhanceModal(modal){
   if(!modal||modal.dataset.bl==='1')return;const inf=info(modal);if(!inf)return;modal.dataset.bl='1';
@@ -249,6 +249,7 @@ const css=document.createElement('style');css.textContent=`
 .blc-forget{background:#6B5A5A;color:#F2F3F2}
 .blc-tm,.bl-tm{display:block;font-size:12px;font-weight:700;color:#F2CD37;margin-top:8px;line-height:1.4}
 .bl-line{background:#05131D;border:2px solid #0A3463;border-radius:8px;padding:8px 10px;margin:6px 0;line-height:1.4}
+.bl-price{font-size:1.85em;font-weight:800;display:inline;line-height:1.15}
 .bl-stale{display:inline-block;background:#A95500;color:#fff;font-weight:700;border-radius:4px;padding:1px 6px;font-size:11px}
 .bl-mine{background:#F2CD37;color:#05131D;font-size:15px;padding:9px 16px}
 `;document.head.appendChild(css);
