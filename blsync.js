@@ -10,7 +10,7 @@
 const BL_PROXY_ENDPOINT = 'https://studscore-community.studscore.workers.dev'; // the Worker's base URL; '' turns the feature off ("Coming soon")
 (function(){
 const LSK={keys:'studBrickLinkKeys',prices:'studBLPrices',sync:'studBLSync'};
-const DAY=864e5,REFRESH_MS=DAY,TOTALS_MAX_MS=DAY,STALE_MS=6*3600e3,BATCH=20,DAILY_BUDGET=400,RETRY_MS=10*60e3,TIMEOUT_MS=25e3;
+const DAY=864e5,REFRESH_MS=DAY,TOTALS_MAX_MS=DAY,STALE_MS=6*3600e3,MANUAL_MS=10*3600e3,BATCH=20,DAILY_BUDGET=400,RETRY_MS=10*60e3,TIMEOUT_MS=25e3;
 const TM='The term \'Bricklink\' is a trademark of Bricklink, Inc. This application uses the Bricklink API but is not endorsed or certified by Bricklink, Inc.';
 const SRC='BrickLink (last 6 months sold)';
 const ld=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k)||'null');return v==null?d:v;}catch(e){return d;}};
@@ -49,6 +49,10 @@ function wanted(){
 const rec=(key,nu)=>P[key]&&P[key][nu];
 function age(it){const r=rec(it.key,it.nu);return r&&r.cur===wantCur()?Date.now()-r.t:Infinity;}
 function due(list,maxAge){return list.filter(it=>age(it)>maxAge).sort((a,b)=>age(b)-age(a));}
+// A record that failed with no price (e.g. bad keys, BrickLink hiccup) is stamped "now", so it is skipped for 24h on
+// normal visits. A manual Sync now / Test connection retries those too, and refreshes prices older than 10 hours.
+const failed=it=>{const r=rec(it.key,it.nu);return !!(r&&!r.v&&r.err);};
+function dueForce(list){return list.filter(it=>age(it)>MANUAL_MS||failed(it)).sort((a,b)=>(failed(b)-failed(a))||(age(b)-age(a)));}
 
 // ---------- talk to the Worker ----------
 async function post(path,body){
@@ -86,13 +90,21 @@ async function lookup(items){
 // ---------- the per-visit sync ----------
 let running=false,timer=0;
 async function sync(force){
-  if(running||!connected()||isDemo())return;
+  // A manual tap always says something, so the button never looks dead.
+  if(running){if(force)paintStatus('Already updating BrickLink prices…');return;}
+  if(isDemo()){if(force)paintStatus('BrickLink sync is off in demo mode.');return;}
+  if(!connected()){if(force)paintStatus('Not connected. Paste your four BrickLink values and tap Test connection.');return;}
   if(!force&&S.failT&&Date.now()-S.failT<RETRY_MS)return;
-  const list=due(wanted(),REFRESH_MS);if(!list.length||!budget()){paintStatus();return;}
+  const all=wanted();
+  if(force&&!all.length){paintStatus('No sets or minifigs loaded yet. Load your collection first, then tap Sync now.');return;}
+  const list=force?dueForce(all):due(all,REFRESH_MS);
+  if(!list.length){if(force)paintStatus('All your BrickLink prices are up to date (each was updated in the last 10 hours).',true);else paintStatus();return;}
+  if(!budget()){if(force)paintStatus(`Today's ${DAILY_BUDGET} BrickLink lookups on this device are used up. Sync picks up again tomorrow.`,true);else paintStatus();return;}
   running=true;paintStatus('Updating BrickLink prices…');
   let got=0,err=null,todo=list;
-  while(todo.length&&budget()){const r=await lookup(todo);if(!r.ok){err=r.error;break;}got+=r.good;todo=todo.slice(r.n);paintStatus(`Updating BrickLink prices… ${list.length-todo.length} of ${list.length}`);}
-  running=false;
+  try{while(todo.length&&budget()){const r=await lookup(todo);if(!r.ok){err=r.error;break;}got+=r.good;todo=todo.slice(r.n);paintStatus(`Updating BrickLink prices… ${list.length-todo.length} of ${list.length}`);}}
+  catch(e){err='sync error: '+(e&&e.message||e);}
+  finally{running=false;}
   S.last={t:Date.now(),ok:!err,msg:err?String(err).slice(0,120):'',got,left:todo.length};if(err)S.failT=Date.now();else delete S.failT;saveS();
   if(got&&typeof render==='function'&&typeof owned!=='undefined'){quiet=true;try{render(owned);}finally{quiet=false;}}
   paintStatus();
@@ -140,7 +152,7 @@ function statusText(){
   let t=L?`Last sync ${ago(L.t)}: ${L.ok?'OK':'stopped, '+H(L.msg)}${L.left?`, ${L.left} items wait for the next visit`:''}.`:'Not synced yet.';
   return t+` ${n} BrickLink price${n===1?'':'s'} saved on this device. Lookups today: ${DAILY_BUDGET-budget()} of ${DAILY_BUDGET}.`;
 }
-function paintStatus(msg){const el=document.getElementById('blc-status');if(el)el.innerHTML=msg?H(msg):statusText();}
+function paintStatus(msg,withStatus){const el=document.getElementById('blc-status');if(el)el.innerHTML=msg?H(msg)+(withStatus?' '+statusText():''):statusText();}
 function mountSettings(){
   const host=document.getElementById('tab-value');if(!host)return;
   let box=document.getElementById('bl-connect');const wasOpen=box&&box.open;
@@ -156,7 +168,7 @@ function mountSettings(){
     else if(r.net||r.status>=500||r.status===429)paintStatus('Couldn\'t reach StudScore\'s price helper ('+(r.error||'error')+'). Your keys were not saved. Try again in a little while.');
     else paintStatus('BrickLink said no: '+(r.error||'unknown error')+'. Check the four values and that the token IP is 0.0.0.0.');
   };
-  const s=document.getElementById('blc-sync');if(s)s.onclick=()=>{delete S.failT;sync(true);};
+  const s=document.getElementById('blc-sync');if(s)s.onclick=()=>{delete S.failT;paintStatus('Checking your BrickLink prices…');sync(true);};
   const fg=document.getElementById('blc-forget');if(fg)fg.onclick=()=>{
     if(!confirm('Forget your BrickLink keys on this device? Saved BrickLink prices are cleared too.'))return;
     try{localStorage.removeItem(LSK.keys);localStorage.removeItem(LSK.prices);localStorage.removeItem(LSK.sync);}catch(e){}
