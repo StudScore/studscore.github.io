@@ -42,6 +42,8 @@ const DEF={set:'Used, complete',fig:'Used'};
 
 // Brick and minifig icons (original SVG, LEGO-style shapes, no logos)
 const ICON_BRICK='<svg class="ce-ic" viewBox="0 0 28 22" aria-hidden="true"><rect x="5" y="1" width="7" height="5" rx="1.2" fill="#F2CD37" stroke="#05131D" stroke-width="1.6"/><rect x="16" y="1" width="7" height="5" rx="1.2" fill="#F2CD37" stroke="#05131D" stroke-width="1.6"/><rect x="1.5" y="5.5" width="25" height="15" rx="2" fill="#F2CD37" stroke="#05131D" stroke-width="1.8"/><rect x="3.5" y="7.5" width="21" height="3" rx="1" fill="#FFE68A"/></svg>';
+// Start fresh: a 2x1 brick with a turn-back arrow (original SVG, no logos)
+const ICON_RESET='<svg class="ce-ic" viewBox="0 0 26 24" aria-hidden="true"><rect x="5" y="9" width="5" height="3.4" rx="1" fill="#F2CD37" stroke="#05131D" stroke-width="1.4"/><rect x="14" y="9" width="5" height="3.4" rx="1" fill="#F2CD37" stroke="#05131D" stroke-width="1.4"/><rect x="2" y="12" width="20" height="9" rx="1.6" fill="#F2CD37" stroke="#05131D" stroke-width="1.6"/><path d="M4.5 6.5A9 9 0 0 1 20 4.5" fill="none" stroke="#C91A09" stroke-width="2.2" stroke-linecap="round"/><path d="M20.8 1.2l.2 4.6-4.5.4" fill="none" stroke="#C91A09" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const ICON_FIG='<svg class="ce-ic" viewBox="0 0 24 26" aria-hidden="true"><rect x="9" y="0.8" width="6" height="3" rx="1" fill="#F2CD37" stroke="#05131D" stroke-width="1.4"/><rect x="5.5" y="3.5" width="13" height="10" rx="3.2" fill="#F2CD37" stroke="#05131D" stroke-width="1.6"/><circle cx="9.5" cy="8" r="1.1" fill="#05131D"/><circle cx="14.5" cy="8" r="1.1" fill="#05131D"/><path d="M9 10.6q3 2 6 0" stroke="#05131D" stroke-width="1.2" fill="none"/><path d="M4 25l2-10h12l2 10z" fill="#C91A09" stroke="#05131D" stroke-width="1.6" stroke-linejoin="round"/></svg>';
 
 // ---------- state ----------
@@ -76,7 +78,8 @@ function absorb(){let n=0;for(const kind of ['set','fig']){const M=kind==='set'?
 // ---------- apply the app layer onto owned / extras (in place) ----------
 function apply(){
   if(isDemo())return;
-  const b=getBase()||snapBase();
+  const has=(typeof owned!=='undefined'&&owned&&Object.keys(owned).length)||Object.keys(exFigs()).length||Object.keys(EDITS.sets).length||Object.keys(EDITS.figs).length;
+  const b=getBase()||(has?snapBase():{sets:{},figs:{}}); // nothing at all (e.g. after Start fresh): don't save an empty base
   if(typeof owned==='undefined')return;
   for(const k of Object.keys(owned))delete owned[k];
   for(const k in b.sets)if(b.sets[k]>0&&(typeof SETS==='undefined'||SETS[k]))owned[k]=b.sets[k];
@@ -222,9 +225,9 @@ function ingest(text,name,mode){
 function removeSource(id){SOURCES=(SOURCES||[]).filter(x=>x.id!==id);saveSources();compose(null);}
 
 // ---------- wrap render + loadCollection (outermost) ----------
-let freshUpload=false;
+let freshUpload=false,resetting=false;
 if(typeof render==='function'){const _r=render;render=function(o){
-  if(capturing)return; // a file being read for its source: nothing is drawn or saved
+  if(capturing||resetting)return; // a file being read for its source, or Start fresh about to reload: nothing is drawn or saved
   try{if(!isDemo()){if(freshUpload){freshUpload=false;const fm=ld(LS.meta,null);if(fm)sv(LS.metaFile,fm);snapBase();absorb();
     if(typeof extras!=='undefined'&&extras){extras.msg='';extras.note=composeNote;}}apply();}}catch(e){console.error('colledit apply',e);}
   const r=_r.apply(this,arguments);try{paintBars();decorate();}catch(e){console.error('colledit',e);}return r;};}
@@ -281,7 +284,7 @@ function paintSources(){
   const S=isDemo()?[]:(SOURCES||[]);
   if(!S.length){if(box)box.remove();return;}
   if(!box){box=document.createElement('div');box.id='ce-sources';box.className='ce-bar ce-srcbox';ib.insertAdjacentElement('afterend',box);}
-  box.innerHTML=`<div class="ce-srch">Loaded files</div>${sourcesHTML()}<div class="ce-go" style="margin-top:6px"><button type="button" class="ce-add" data-ce="upload">${ICON_BRICK}Upload another file</button></div><div class="muted small">BrickLink exports sets and minifigs separately. Upload both and they add together.</div>`;
+  box.innerHTML=`<div class="ce-srch">Loaded files</div>${sourcesHTML()}<div class="ce-go" style="margin-top:6px"><button type="button" class="ce-add" data-ce="upload">${ICON_BRICK}Upload another file</button><button type="button" class="ce-ghost ce-fresh" data-ce="fresh">${ICON_RESET}Start fresh</button></div><div class="muted small">BrickLink exports sets and minifigs separately. Upload both and they add together.</div>`;
 }
 document.addEventListener('click',e=>{
   const rmb=e.target.closest&&e.target.closest('[data-src-rm]');
@@ -424,6 +427,12 @@ const css=document.createElement('style');css.setAttribute('data-ss','colledit')
 .ce-go{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
 .ce-go button{margin:0}
 .ce-danger{background:#C91A09;color:#F2F3F2}
+.ce-fopt{display:flex;gap:10px;align-items:flex-start;padding:10px;margin:8px 0;border:2px solid #3A3D40;border-radius:8px;cursor:pointer}
+.ce-fopt:has(input:checked){border-color:#F2CD37}.ce-fopt input{margin-top:3px;width:18px;height:18px;accent-color:#F2CD37;flex:none}
+.ce-fopt b{display:block}.ce-fopt small{display:block;color:#A0A5A9;margin-top:3px;line-height:1.35}
+.ce-fkeys{display:flex;gap:8px;align-items:center;margin:4px 2px 8px;font-size:14px}.ce-fkeys input{width:18px;height:18px;accent-color:#C91A09}
+.ce-fl{margin:4px 0 8px 18px;padding:0;font-size:13px;line-height:1.5;word-break:break-word}
+.ce-fresh .ce-ic{margin-right:4px}
 .ce-edit{margin:12px 0 4px;padding:10px 12px;background:#05131D;border:2px solid #F2CD37;border-radius:10px}
 .ce-edit .ce-eh{display:flex;align-items:center;gap:8px;font-weight:800;color:#F2CD37}
 .ce-edit .ce-eh .ce-badge{position:static}
@@ -466,7 +475,7 @@ function paintBars(){
     if(!bar){bar=document.createElement('div');bar.id='ce-bar-'+tab;bar.className='ce-bar';host.parentNode.insertBefore(bar,host);}
     if(isDemo()){bar.innerHTML=`<span class="ce-sum">This is the demo collection. Start your own to add ${kind==='set'?'sets':'minifigs'} here.</span><span class="ce-sp"></span><button type="button" class="ce-add" data-ce="own">${ICON_BRICK}Start my own</button>`;return;}
     const c=counts(),bits=[];if(c.a)bits.push(c.a+' added');if(c.e)bits.push(c.e+' edited');if(c.r)bits.push(c.r+' removed');
-    bar.innerHTML=`<button type="button" class="ce-add" data-ce="add" data-kind="${kind}">${kind==='set'?ICON_BRICK:ICON_FIG}Add ${kind==='set'?'a set':'a minifig'}</button><span class="ce-sp"></span>${c.n?`<button type="button" class="ce-ghost" data-ce="review" title="${H(bits.join(' · '))}">In-app edits (${c.n})</button>`:''}${(SOURCES||[]).length?`<button type="button" class="ce-ghost" data-ce="files" title="${H(sourcesNote())}">Files (${SOURCES.length})</button>`:''}<button type="button" class="ce-ghost" data-ce="export" title="Download your collection, with in-app edits, as a CSV you can re-upload">Export CSV</button>`;
+    bar.innerHTML=`<button type="button" class="ce-add" data-ce="add" data-kind="${kind}">${kind==='set'?ICON_BRICK:ICON_FIG}Add ${kind==='set'?'a set':'a minifig'}</button><span class="ce-sp"></span>${c.n?`<button type="button" class="ce-ghost" data-ce="review" title="${H(bits.join(' · '))}">In-app edits (${c.n})</button>`:''}${(SOURCES||[]).length?`<button type="button" class="ce-ghost" data-ce="files" title="${H(sourcesNote())}">Files (${SOURCES.length})</button>`:''}<button type="button" class="ce-ghost" data-ce="export" title="Download your collection, with in-app edits, as a CSV you can re-upload">Export CSV</button><button type="button" class="ce-ghost ce-fresh" data-ce="fresh" title="Reset minifig ticks, recount achievements, or remove everything saved on this device">${ICON_RESET}Start fresh</button>`;
   });
 }
 function decorate(){
@@ -484,6 +493,7 @@ document.addEventListener('click',e=>{
   if(a==='add'){e.preventDefault();openAdd(b.dataset.kind||'set');}
   else if(a==='review'){e.preventDefault();openReview();}
   else if(a==='export'){e.preventDefault();exportCSV();}
+  else if(a==='fresh'){e.preventDefault();openFresh();}
   else if(a==='own'){e.preventDefault();startOwn();}
 });
 function startOwn(){
@@ -697,6 +707,45 @@ try{new MutationObserver(ms=>{for(const m of ms)for(const n of m.addedNodes){if(
   if(bg)requestAnimationFrame(()=>requestAnimationFrame(()=>enhance(bg)));}}).observe(document.body,{childList:true});}catch(e){}
 
 // ---------- review sheet ----------
+// ---------- Start fresh ----------
+// What each choice clears (localStorage keys unless noted). Achievements, FigScore and the other scores are not saved anywhere:
+// app.js works them out from your sets and minifigs on every redraw, so they follow whatever is left.
+const FRESH={
+  figs:{t:'Reset minifig ticks and loose minifig edits',d:'Unticks every minifig in every set\'s Parts checklist and undoes minifigs you added, changed or removed in the app. Parts ticks, your sets and your uploaded files stay. Loose minifigs from an uploaded file come back from that file (remove the file under Loaded files to drop them).',
+    keys:['studParts: minifig ticks only (fig| lines and Check all minifig flags; parts ticks kept)','studCollEdits: the figs part (in-app loose minifig edits)','studMissing: the figs part (old missing notes on minifigs)']},
+  ach:{t:'Recount achievements and scores',d:'Achievements and scores are not saved on their own. StudScore works them out from your sets and minifigs, so this clears nothing and redraws everything from what you own now. To change them, reset minifigs or remove everything.',keys:[]},
+  all:{t:'Remove everything',d:'Clears your loaded files, in-app edits, Parts checklist ticks, missing notes, saved prices and value history on this device. Your BrickLink and BrickEconomy keys stay unless you tick the box below.',
+    keys:['brickOwned','brickExtras','studDemo','studCollBase','studCollEdits','studCollSources','studMeta','studMetaFile','studMissing','studParts','studSnapshots','studUserValues','studBEFile','studBEValues','studBESync','studBLPrices','studBLSync']},
+  keys:['studBrickLinkKeys','studBrickEconomyKey','IndexedDB studscore-parts (BrickLink parts lists saved with your keys)']
+};
+function openFresh(){
+  const bg=sheet('ce-fresh-bg','Start fresh',`<div class="ce-head">${ICON_RESET}<h2>Start fresh</h2></div><div class="ce-pick" style="padding-top:0">
+<p class="muted small" style="margin-top:0">StudScore only uses what is saved in this browser. It never reads the file on your computer again by itself.</p>
+${['figs','ach','all'].map((k,i)=>`<label class="ce-fopt"><input type="radio" name="ce-fresh" value="${k}"${i===0?' checked':''}><span><b>${H(FRESH[k].t)}</b><small>${H(FRESH[k].d)}</small></span></label>`).join('')}
+<label class="ce-fkeys" hidden><input type="checkbox" data-fkeys> <span>Also forget my BrickLink and BrickEconomy keys</span></label>
+<div class="ce-go"><button type="button" class="ce-add" data-fnext>${ICON_RESET}Continue</button></div></div>`);
+  const sync=()=>{const v=bg.querySelector('input[name=ce-fresh]:checked').value;bg.querySelector('.ce-fkeys').hidden=v!=='all';};
+  bg.querySelectorAll('input[name=ce-fresh]').forEach(x=>x.onchange=sync);sync();
+  bg.querySelector('[data-fnext]').onclick=()=>{const v=bg.querySelector('input[name=ce-fresh]:checked').value,fk=v==='all'&&bg.querySelector('[data-fkeys]').checked;freshConfirm(v,fk);};
+}
+function freshConfirm(v,fk){
+  const o=FRESH[v],keys=o.keys.concat(fk?FRESH.keys:[]);
+  const bg=sheet('ce-fresh-bg','Start fresh',`<div class="ce-head">${ICON_RESET}<h2>${H(o.t)}?</h2></div><div class="ce-pick" style="padding-top:0">
+<p>${H(o.d.replace(/ Your BrickLink and BrickEconomy keys stay unless you tick the box below\./,''))}</p>${keys.length?`<div class="ce-srch">Cleared on this device</div><ul class="ce-fl">${keys.map(k=>`<li>${H(k)}</li>`).join('')}</ul>${v==='all'&&!fk?'<p class="muted small">Kept: your BrickLink and BrickEconomy keys, and display choices (tile size).</p>':''}<p class="muted small">This can't be undone. Export CSV first if you may want it back.</p>`:'<p class="muted small">Nothing is deleted.</p>'}
+<div class="ce-go"><button type="button" class="ce-ghost" data-fback>Back</button><button type="button" class="ce-add${keys.length?' ce-danger':''}" data-fgo>${keys.length?'Yes, start fresh':'Recount now'}</button></div></div>`);
+  bg.querySelector('[data-fback]').onclick=openFresh;
+  bg.querySelector('[data-fgo]').onclick=()=>{const msg=doFresh(v,fk);closeSheet('ce-fresh-bg');try{sessionStorage.setItem('studFreshMsg',msg);}catch(e){}resetting=true;location.reload();};
+}
+function doFresh(v,fk){
+  const P=PARTS();
+  if(v==='figs'){if(P&&P.resetFigTicks)P.resetFigTicks();
+    EDITS.figs={};saveEdits();MISS.figs={};saveMiss();return 'Minifig ticks and loose minifig edits reset.';}
+  if(v==='ach')return 'Achievements and scores recounted.';
+  if(P&&P.resetAll)P.resetAll();EDITS=norm(null);MISS={sets:{},figs:{}};
+  for(const k of FRESH.all.keys)rm(k);
+  if(fk){rm('studBrickLinkKeys');rm('studBrickEconomyKey');try{if(P&&P.clearBrickLinkCopies)P.clearBrickLinkCopies();}catch(e){}try{indexedDB.deleteDatabase('studscore-parts');}catch(e){}}
+  return fk?'Everything removed, keys too. Upload a file to start again.':'Everything removed. Your keys are kept. Upload a file to start again.';
+}
 function openReview(){
   const rows=[];for(const kind of ['set','fig'])for(const id in (kind==='set'?EDITS.sets:EDITS.figs)){const s=status(kind,id);if(!s)continue;const r=rec(kind,id),fq=fileQty(kind,id);
     const nm=kind==='set'?(SETS[id]?SETS[id][0]:id):(r.name||figLabel(id));
@@ -743,8 +792,12 @@ function importMissing(text){
 // ---------- start ----------
 window.StudCollEdit={missing:()=>JSON.parse(JSON.stringify(MISS)),setMiss,figInfo,edits:()=>JSON.parse(JSON.stringify(EDITS)),setEdit,undoEdit,clearAll,status,openAdd,exportCSV};
 try{
-  if(!isDemo()){if(!getBase())snapBase();mergeMeta();}
-  if(!isDemo()&&(Object.keys(EDITS.sets).length||Object.keys(EDITS.figs).length)&&typeof owned!=='undefined')render(owned);
+  if(!isDemo()){if(!getBase()&&typeof owned!=='undefined'&&owned&&(Object.keys(owned).length||Object.keys(exFigs()).length))snapBase();mergeMeta();}
+  // Always redraw once now. app.js and share.js draw the page while their scripts load, before this file wraps figsFromSets,
+  // so that first drawing counts every set minifig (old rule): Figs tab, FigScore and achievements. Redrawing here applies the
+  // checklist rule. (Before, this only ran when there were in-app edits, so a reload brought the old set figs back.)
+  if(!isDemo()&&typeof owned!=='undefined'&&owned)render(owned);
   else paintBars();
+  try{const m=sessionStorage.getItem('studFreshMsg');if(m){sessionStorage.removeItem('studFreshMsg');setTimeout(()=>toast(m),400);}}catch(e){}
 }catch(e){console.error('colledit init',e);}
 })();

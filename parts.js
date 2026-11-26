@@ -35,7 +35,16 @@ const BLC={"125":["Mx Light Gray","9C9C9C"],"211":["Mx Foil Light Gray","9C9C9C"
 const CATS={"1":"Baseplates","3":"Bricks Sloped","4":"Duplo, Quatro and Primo","5":"Bricks Special","6":"Bricks Wedged","7":"Containers","8":"Technic Bricks","9":"Plates Special","11":"Bricks","12":"Technic Connectors","13":"Minifigs","14":"Plates","15":"Tiles Special","16":"Windows and Doors","17":"Gear Parts","18":"Hinges, Arms and Turntables","19":"Tiles","20":"Bricks Round and Cones","21":"Plates Round Curved and Dishes","22":"Pneumatics","23":"Panels","24":"Other","25":"Technic Steering, Suspension and Engine","26":"Technic Special","27":"Minifig Accessories","28":"Animals / Creatures","29":"Wheels and Tyres","30":"Tubes and Hoses","31":"String, Bands and Reels","32":"Bars, Ladders and Fences","33":"Rock","34":"Supports, Girders and Cranes","35":"Transportation - Sea and Air","36":"Transportation - Land","37":"Bricks Curved","38":"Flags, Banners and Signs","39":"Magnets and Holders","40":"Technic Panels","41":"Large Buildable Figures","42":"Belville, Scala and Fabuland","43":"Znap","44":"Mechanical","45":"Electronics","46":"Technic Axles","47":"Windscreens and Fuselage","48":"Clikits","49":"Plates Wedged","50":"HO Scale","51":"Technic Beams","52":"Technic Gears","53":"Technic Pins","54":"Technic Bushes","55":"Technic Beams Special","56":"Tools","57":"Non-Buildable Figures (Duplo, Fabuland, etc)","58":"Stickers","59":"Minifig Heads","60":"Minifig Upper Body","61":"Minifig Lower Body","62":"Minidoll Heads","63":"Minidoll Upper Body","64":"Minidoll Lower Body","65":"Minifig Headwear","66":"Modulex","67":"Tiles Round and Curved","68":"Projectiles / Launchers","69":"Energy Effects","70":"Minifig Hipwear","71":"Minifig Neckwear","72":"Minifig Headwear Accessories","73":"Minifig Shields, Weapons, & Tools","74":"Animal / Creature Accessories","75":"Animal / Creature Body Parts","76":"Plants & Trees","77":"Non-System Parts","78":"Pen & Watch"};
 
 let ST=(()=>{const s=ld(LS,null)||{};const o={sets:s.sets||{},figs:s.figs||{}};
-  for(const b of [o.sets,o.figs])for(const k in b){const r=b[k];if(r&&!('ps' in r)&&!r.v2){r.ps=1;if(r.b)r.fb=1;}if(r)r.v2=1;}return o;})();
+  // Older records: phase 2 (no v2) had no minifig lines; 4a363cf (v2, no v3) turned an old Check all into "all minifigs ticked" (fb).
+  // Set minifigs must count only once ticked, so neither keeps fb; fq ("figs quiet") stops their unticked minifigs showing as
+  // missing until a minifig line, Check all or Uncheck all is used in that set.
+  let mig=false;
+  for(const b of [o.sets,o.figs])for(const k in b){const r=b[k];if(!r||r.v3)continue;mig=true;
+    if(!('ps' in r)&&!r.v2){r.ps=1;r.fq=1;}
+    else if(r.fb&&!Object.keys(r.h||{}).some(x=>x.startsWith('fig|'))){delete r.fb;r.fq=1;}
+    if(r.fq&&r.s)r.s.f=0;r.v2=1;r.v3=1;}
+  if(mig)try{localStorage.setItem(LS,JSON.stringify(o));}catch(e){}
+  return o;})();
 let saveT=0,dirty=false;const save=()=>{dirty=true;clearTimeout(saveT);saveT=setTimeout(flush,250);};
 const flush=()=>{clearTimeout(saveT);if(!dirty)return;dirty=false;sv(LS,ST);};
 window.addEventListener('pagehide',flush);
@@ -137,7 +146,7 @@ function build(D,kind,id){
 }
 
 // ---------- have counts ----------
-function ensure(kind,id,cond){let r=rec(kind,id);if(!r){r={b:newCond(cond)?1:0,h:{},sa:{},t:Date.now(),v2:1};bag(kind)[id]=r;}return r;}
+function ensure(kind,id,cond){let r=rec(kind,id);if(!r){r={b:newCond(cond)?1:0,h:{},sa:{},t:Date.now(),v2:1,v3:1};bag(kind)[id]=r;}return r;}
 // minifig lines are never ticked by default (not even Sealed/New): only a tick or Check all (r.fb) makes them yours
 function have(r,o,cond){if(r&&o.k in r.h)return Math.min(o.q,r.h[o.k]);if(o.fig)return r&&r.fb?o.q:0;const b=r?r.b:(newCond(cond)?1:0);return b?o.q:0;}
 // a list built from a different source (Rebrickable before, BrickLink now): carry the plain-part counts over to the paired lines
@@ -149,7 +158,7 @@ function migrate(r,M){
 }
 function tally(M,r,cond){
   let n=0,L=0,m=0,l=0,k=0,F=0,f=0;
-  const fm=!!(r&&r.ps); // unticked minifigs only count as missing once the parts checklist is started by hand
+  const fm=!!(r&&r.ps&&!r.fq); // unticked minifigs only count as missing once the parts checklist is started by hand
   for(const o of M.lines){const h=have(r,o,cond);if(o.fig){F+=o.q;if(fm&&h<o.q)f+=o.q-h;continue;}if(o.sheet){if(h<o.q)k+=o.q-h;continue;}n+=o.q;L++;if(h<o.q){m+=o.q-h;l++;}}
   return {n,L,m,l,k,F,f};
 }
@@ -199,7 +208,7 @@ function mount(slot,kind,id,getCond,onChange){
     const figHint=s.F?` Tick the minifigs you have so they count on the Figs tab (${figOwn} of ${s.F} ticked).`:'';
     if(started&&!(r&&r.ps))msg=`<b class="ok">${H(cond()||'New')}: all ${s.n.toLocaleString()} parts count as there.</b>${figHint}`;
     else if(!started)msg=`<b>Not checked yet.</b> Tick the parts${s.F?' and minifigs':''} you have. ${s.n.toLocaleString()} parts in ${s.L} lots${fl}.${s.F?` Minifigs count as yours on the Figs tab once ticked${figOwn?` (${figOwn} ticked)`:''}.`:''}`;
-    else if(!s.m&&!s.k&&!s.f)msg=`<b class="ok">Complete.</b> All ${s.n.toLocaleString()} parts in ${s.L} lots${fl} checked.`;
+    else if(!s.m&&!s.k&&!s.f)msg=r&&r.fq&&figOwn<s.F?`<b class="ok">Complete.</b> All ${s.n.toLocaleString()} parts in ${s.L} lots checked.${figHint}`:`<b class="ok">Complete.</b> All ${s.n.toLocaleString()} parts in ${s.L} lots${fl} checked.`;
     else{const mb=[];if(s.m)mb.push(`${s.m.toLocaleString()} part${s.m===1?'':'s'} in ${s.l} lot${s.l===1?'':'s'}`);if(s.f)mb.push(`${s.f} minifig${s.f===1?'':'s'}`);
       msg=`<b class="ms">Missing ${mb.join(' and ')||'nothing'}</b>${s.k?` + ${s.k>1?s.k+' sticker sheets':'sticker sheet'}`:''} · ${done.toLocaleString()} of ${s.n.toLocaleString()} parts checked`;}
     return {html:`<div class="pl-sum">${msg}</div><div class="pl-bar"><i style="width:${started?pct:0}%"></i></div>`,s,started};
@@ -219,7 +228,7 @@ function mount(slot,kind,id,getCond,onChange){
     el.querySelector('.pl-list').innerHTML=html||`<p class="pl-empty">${onlyMiss?'Nothing missing. This one is complete.':'No parts listed.'}</p>`;
   };
   const changed=figs=>{storeSummary(kind,id,M,cond());paintHead();onChange&&onChange({figs:!!figs});};
-  const setHave=(o,n)=>{const r=ensure(kind,id,cond());r.h[o.k]=Math.max(0,Math.min(o.q,n));if(!o.fig)r.ps=1;
+  const setHave=(o,n)=>{const r=ensure(kind,id,cond());r.h[o.k]=Math.max(0,Math.min(o.q,n));if(!o.fig)r.ps=1;else delete r.fq;
     const row=el.querySelector(`.pl-r[data-k="${CSS.escape(o.k)}"]`);
     if(row){if(onlyMiss&&r.h[o.k]>=o.q){row.classList.add('done');row.querySelector('.pl-ck').setAttribute('aria-checked','true');setTimeout(()=>{if(row.isConnected&&onlyMiss&&have(rec(kind,id),o,cond())>=o.q)row.remove();},450);}
       else{const tmp=document.createElement('div');tmp.innerHTML=rowHTML(o,have(r,o,cond()),!!(r.sa&&r.sa[o.k]));row.replaceWith(tmp.firstChild);}}
@@ -246,7 +255,7 @@ function mount(slot,kind,id,getCond,onChange){
       if(t.closest('.pl-q output')){setHave(o,h>=o.q?0:h+1);return;} // tap the count to add one (wraps to 0)
       return;}
     const a=t.closest('[data-all]');
-    if(a){const r=ensure(kind,id,cond());r.b=+a.dataset.all;r.fb=r.b;r.h={};r.ps=1;changed(true);paintList();return;}
+    if(a){const r=ensure(kind,id,cond());r.b=+a.dataset.all;r.fb=r.b;r.h={};r.ps=1;delete r.fq;changed(true);paintList();return;}
     if(t.closest('.pl-only')){onlyMiss=!onlyMiss;t.closest('.pl-only').setAttribute('aria-pressed',onlyMiss);paintHead();paintList();return;}
     if(t.closest('[data-wl]')){wanted(kind,id,M,cond());return;}
   });
@@ -264,7 +273,7 @@ function mount(slot,kind,id,getCond,onChange){
 function wanted(kind,id,M,cond){
   const r=rec(kind,id),items=[];let skipped=0;
   for(const o of M.lines){const miss=o.q-have(r,o,cond);if(miss<=0)continue;
-    if(o.fig&&!(r&&r.ps))continue; // minifigs only count as missing once the parts checklist is started
+    if(o.fig&&!(r&&r.ps&&!r.fq))continue; // minifigs only count as missing once the parts checklist is started
     if(o.fig){let bl=null;try{bl=typeof figIds==='function'?figIds(o.no).bl:null;}catch(e){}if(!bl){skipped++;continue;}
       items.push(`<ITEM><ITEMTYPE>M</ITEMTYPE><ITEMID>${H(bl)}</ITEMID><MINQTY>${miss}</MINQTY><CONDITION>X</CONDITION><REMARKS>${H('Set '+id)}</REMARKS><NOTIFY>N</NOTIFY></ITEM>`);continue;}
     const no=o.st?o.st.no:o.no,c=o.sheet?0:o.col.bl;if(c==null){skipped++;continue;}
@@ -277,10 +286,10 @@ function wanted(kind,id,M,cond){
 }
 
 // ---------- export / import (one CSV column, compact JSON) ----------
-function exportField(kind,id){const r=rec(kind,id);if(!r)return '';const o={b:r.b};if(Object.keys(r.h).length)o.h=r.h;if(r.sa&&Object.keys(r.sa).length)o.sa=r.sa;if(r.src)o.src=r.src;o.ps=r.ps?1:0;if(r.fb)o.fb=1;if(r.s)o.s=r.s;return JSON.stringify(o);}
+function exportField(kind,id){const r=rec(kind,id);if(!r)return '';const o={b:r.b};if(Object.keys(r.h).length)o.h=r.h;if(r.sa&&Object.keys(r.sa).length)o.sa=r.sa;if(r.src)o.src=r.src;o.ps=r.ps?1:0;if(r.fb)o.fb=1;if(r.fq)o.fq=1;if(r.s)o.s=r.s;return JSON.stringify(o);}
 function importField(kind,id,txt){if(rec(kind,id))return false;let o;try{o=JSON.parse(txt);}catch(e){return false;}if(!o||typeof o!=='object')return false;
-  const clean={b:o.b?1:0,h:{},sa:{},t:Date.now(),v2:1};for(const k in (o.h||{})){const n=parseInt(o.h[k],10);if(n>=0&&k.length<80)clean.h[k]=n;}for(const k in (o.sa||{}))if(k.length<80)clean.sa[k]=1;
-  if(o.src==='bl'||o.src==='rb')clean.src=o.src;clean.ps=o.ps||!('ps' in o)?1:0;if(o.fb||(!('ps' in o)&&o.b))clean.fb=1;if(!clean.ps)delete clean.ps;if(o.s&&typeof o.s==='object'){const s={};for(const f of ['m','l','k','n','L','F','f'])s[f]=Math.max(0,parseInt(o.s[f],10)||0);clean.s=s;}
+  const clean={b:o.b?1:0,h:{},sa:{},t:Date.now(),v2:1,v3:1};for(const k in (o.h||{})){const n=parseInt(o.h[k],10);if(n>=0&&k.length<80)clean.h[k]=n;}for(const k in (o.sa||{}))if(k.length<80)clean.sa[k]=1;
+  if(o.src==='bl'||o.src==='rb')clean.src=o.src;clean.ps=o.ps||!('ps' in o)?1:0;if(o.fb&&o.ps)clean.fb=1;if(o.fq||!("ps" in o))clean.fq=1;if(!clean.ps)delete clean.ps;if(o.s&&typeof o.s==='object'){const s={};for(const f of ['m','l','k','n','L','F','f'])s[f]=Math.max(0,parseInt(o.s[f],10)||0);clean.s=s;}
   bag(kind)[id]=clean;save();return true;}
 function clear(kind,id){delete bag(kind)[id];save();}
 
@@ -336,6 +345,12 @@ const css=document.createElement('style');css.textContent=`
 @media (max-width:520px){.pl-r{grid-template-columns:28px 52px minmax(0,1fr);grid-template-areas:'ck im t' 'ck im q';padding:6px 6px 6px 6px}.pl-im{width:52px;height:52px}.pl-im img{max-width:48px;max-height:48px}.pl-q{justify-self:end}.pl-q.one{display:none}.pl-x1{display:inline}.pl-q button{width:34px;height:32px}}
 `;document.head.appendChild(css);
 
-window.StudParts={loose:LOOSE,mount,figsOwned,started:(kind,id,cond)=>started_(rec(kind,id),cond),clearBrickLinkCopies:blClearLocal,summary,missingText,exportField,importField,clear,build,wanted:(kind,id)=>{const D=MEM.get(kind+':'+id);return D?wanted(kind,id,build(D),''):null;},
+// Start fresh (colledit.js): minifig ticks only, or every checklist. Written now, so the pagehide flush can't bring them back.
+function resetFigTicks(){let n=0;for(const b of [ST.sets,ST.figs])for(const k in b){const r=b[k];if(!r)continue;
+    for(const x of Object.keys(r.h||{}))if(x.startsWith('fig|')){delete r.h[x];n++;}
+    if(r.fb){delete r.fb;n++;}if(r.ps)r.fq=1;else delete r.fq;if(r.s)r.s.f=0;}
+  clearTimeout(saveT);dirty=false;sv(LS,ST);return n;}
+function resetAll(){ST={sets:{},figs:{}};clearTimeout(saveT);dirty=false;try{localStorage.removeItem(LS);}catch(e){}MEM.clear();}
+window.StudParts={loose:LOOSE,resetFigTicks,resetAll,mount,figsOwned,started:(kind,id,cond)=>started_(rec(kind,id),cond),clearBrickLinkCopies:blClearLocal,summary,missingText,exportField,importField,clear,build,wanted:(kind,id)=>{const D=MEM.get(kind+':'+id);return D?wanted(kind,id,build(D),''):null;},
   _state:()=>JSON.parse(JSON.stringify(ST)),_flush:flush};
 })();
