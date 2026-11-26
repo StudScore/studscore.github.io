@@ -97,7 +97,7 @@ document.addEventListener('keydown',e=>{
   if(n)n.focus();
 });
 
-let figSort='theme';
+let figSort='theme',figShow='all'; // figShow: all | loose | sets (Figs tab filter)
 
 function figYearParts(id){
   const m=(typeof FIGMETA!=='undefined'&&FIGMETA[id])||null;
@@ -129,6 +129,10 @@ function renderFigsSorted(){
   const sort=cmp[figSort]?figSort:'theme';
   rows.sort(cmp[sort]);
   if(!rows.length){el.innerHTML='';return;}
+  const nLoose=rows.filter(f=>(f.loose||0)>0).length,nSets=rows.filter(f=>(f.qty||0)>(f.loose||0)).length;
+  const allRows=rows.length,show=figShow==='loose'?'loose':figShow==='sets'?'sets':'all';
+  if(show==='loose')rows.splice(0,rows.length,...rows.filter(f=>(f.loose||0)>0));
+  else if(show==='sets')rows.splice(0,rows.length,...rows.filter(f=>(f.qty||0)>(f.loose||0)));
   const LIMIT=30,shown=figShowAll?rows:rows.slice(0,LIMIT);
   let html='',last=null;
   for(const f of shown){
@@ -136,12 +140,15 @@ function renderFigsSorted(){
     const from=typeof figFromTxt==='function'?figFromTxt(f):'';
     const meta=typeof figMetaTxt==='function'?figMetaTxt(f.id):'';
     const img=typeof figImg==='function'?figImg(f.id):'';
-    html+=`<div class="setcard figcard" role="button" tabindex="0" data-id="${E(f.id)}"><div class="imgtile"><img class="setimg" loading="lazy" alt="${E(f.id)}" src="${img}" onerror="this.outerHTML='<div class=&quot;setph&quot;>🙂</div>'"></div><div class="setinfo"><b>${E(f.name||f.id)}</b><span class="setsub">${E(f.id)}${f.qty>1?' · ×'+f.qty:''}${E(from)}</span>${meta}</div></div>`;
+    html+=`<div class="setcard figcard" role="button" tabindex="0" data-id="${E(f.id)}"><div class="imgtile"><img class="setimg" loading="lazy" alt="${E(f.id)}" src="${img}" onerror="this.outerHTML='<div class=&quot;setph&quot;>🙂</div>'"></div><div class="setinfo"><b>${E(f.name||f.id)}</b><span class="setsub">${E(f.id)}${f.qty>1?' · ×'+f.qty:''}${E(from)}${(f.loose||0)>0&&!(f.from&&f.from.length)?' · loose':''}</span>${meta}</div></div>`;
   }
-  el.innerHTML=`<h3>My Minifigs (${rows.length})</h3><div class="setctl"><label class="muted small">Sort by</label><select id="figsort">
-<option value="theme">Theme</option><option value="year_old">Year (oldest first)</option><option value="year_new">Year (newest first)</option><option value="pieces">Piece count</option></select></div>
+  el.innerHTML=`<h3>My Minifigs (${allRows})</h3><div class="setctl"><label class="muted small">Sort by</label><select id="figsort">
+<option value="theme">Theme</option><option value="year_old">Year (oldest first)</option><option value="year_new">Year (newest first)</option><option value="pieces">Piece count</option></select>
+<span style="display:inline-flex;gap:8px;align-items:center;white-space:nowrap"><label class="muted small" for="figshow">Show</label><select id="figshow"><option value="all">All (${allRows})</option><option value="loose">Loose (${nLoose})</option><option value="sets">From sets (${nSets})</option></select></span></div>
+${!rows.length?`<p class="muted">${show==='loose'?'No loose minifigs yet. Upload a BrickLink file with minifig rows, or tap Add a minifig.':'No minifigs from sets.'}</p>`:''}
 <div class="sets">${html}</div>${rows.length>LIMIT?`<button id="figmore">${figShowAll?'Show fewer':'Show all '+rows.length+' minifigs'}</button>`:''}`;
   const sel=document.getElementById('figsort');if(sel){sel.value=sort;sel.onchange=()=>{figSort=sel.value;renderFigs();};}
+  const shw=document.getElementById('figshow');if(shw){shw.value=show;shw.onchange=()=>{figShow=shw.value;figShowAll=false;renderFigs();};}
   const m=document.getElementById('figmore');if(m)m.onclick=()=>{figShowAll=!figShowAll;renderFigs();};
   mountSwitch(el);
   bindFigCards(el);
@@ -163,6 +170,7 @@ applyCols(loadCols(),false);
 
 window.StudGrid={
   cols(n){return applyCols(n,true);},
+  figShow(v){if(v==null)return figShow;figShow=(v==='loose'||v==='sets')?v:'all';return figShow;},
   current:currentCols
 };
 })();
