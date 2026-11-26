@@ -21,7 +21,8 @@
 //   Demo mode ignores the app layer (your edits wait for your own collection).
 // FIGS: a fig's total = copies that come with your sets (follow the sets) + loose copies (the app's fig quantity).
 //   The popup shows "You own N: X from sets (listed), Y loose"; editing only ever changes the loose copies.
-// LOOSE FIGS FROM FILES: if the importer found no minifigs, rescueLooseFigs() re-reads the raw file for minifig numbers.
+// LOOSE FIGS FROM FILES: if the importer found no minifigs, findLooseFigs() re-reads the raw file for minifig numbers.
+// SEVERAL UPLOADS: see 'SOURCE RULE' below (sets file + figs file add together; same kind/name/content replaces).
 // MISSING PARTS: 'studMissing' per set/fig (count, note, and for sets which included minifigs are missing).
 //   Missing minifigs are subtracted in figsFromSets(), so they don't count as owned. Exported as 3 extra CSV columns.
 (function(){
@@ -98,6 +99,7 @@ function mergeMeta(){
   if(!fm&&!conds)return;
   const m=fm?JSON.parse(JSON.stringify(fm)):{fmt:'StudScore (added in app)',loaded:today(),sets:{},figs:{},parts:{v:0,q:0},cur:null,vcol:null,has:{}};
   m.ce=1;m.sets=m.sets||{};m.figs=m.figs||{};m.has=m.has||{};
+  try{const S=(typeof SOURCES!=='undefined'&&SOURCES)||[];if(S.length===1&&S[0].meta&&S[0].meta.fmt)m.fmt=S[0].meta.fmt;else if(S.length>1)m.fmt=S.map(x=>x.legacy?'earlier':({sets:'sets',figs:'minifigs',mixed:'sets and minifigs',parts:'parts'})[x.kind]||'other').join(' + ');}catch(e){} // shows as "your sets + minifigs file" after a reload
   for(const k in EDITS.sets){const r=EDITS.sets[k];if(!(r.q>0))continue;const e=m.sets[k]||(m.sets[k]={q:0,v:0,vq:0,vn:null,vu:null,c:0,cq:0,d:null,cond:{}});
     e.q=r.q;if(r.cond){e.cond={[r.cond]:r.q};m.has.cond=1;}}
   for(const id in EDITS.figs){const r=EDITS.figs[id];if(!(r.q>0))continue;const e=m.figs[id]||(m.figs[id]={q:0,v:0,vq:0});e.q=r.q;if(r.cond)e.cond={[r.cond]:r.q};}
@@ -105,24 +107,52 @@ function mergeMeta(){
   try{if(window.StudCollection&&typeof StudCollection.reloadMeta==='function')StudCollection.reloadMeta();}catch(e){} // live basis once Cole adds the hook (cole-diffs/)
 }
 
-// ---------- wrap render + loadCollection (outermost) ----------
-let freshUpload=false;
-if(typeof render==='function'){const _r=render;render=function(o){
-  try{if(!isDemo()){if(freshUpload){freshUpload=false;const fm=ld(LS.meta,null);if(fm)sv(LS.metaFile,fm);snapBase();absorb();}apply();}}catch(e){console.error('colledit apply',e);}
-  const r=_r.apply(this,arguments);try{paintBars();decorate();}catch(e){console.error('colledit',e);}return r;};}
-if(typeof loadCollection==='function'){const _l=loadCollection;loadCollection=function(text){
-  freshUpload=true;rm(LS.metaFile);
-  const r=_l.apply(this,arguments);
-  try{const m=ld(LS.meta,null);if(m)sv(LS.metaFile,m);mergeMeta();}catch(e){}
-  freshUpload=false;
-  try{rescueLooseFigs(text);}catch(e){console.error('colledit loose figs',e);}
-  try{importMissing(text);}catch(e){}
-  return r;};}
+// ---------- several uploads: the base layer is a list of named sources (localStorage 'studCollSources') ----------
+// BrickLink exports sets and minifigs as separate files, so a second upload can ADD to the collection instead of replacing it.
+// SOURCE RULE:
+//   - Each upload becomes one source: {name, kind, hash, sets, figs, parts, meta, be}. kind comes from the contents:
+//     'sets' (only sets), 'figs' (only minifigs), 'mixed' (both), 'parts' (only parts).
+//   - "Add to my collection" (default): the new file replaces any loaded source with the SAME kind, the same file name,
+//     or the same contents; every other source stays. Exception: two different files that each hold sets AND minifigs
+//     ('mixed') are kept side by side (replaced only by the same name or contents), since overlaps count the highest qty anyway. So a newer sets export replaces the old sets export, the figs file
+//     sits beside it, and uploading the same file twice never doubles anything.
+//   - "Replace my collection": the new file becomes the only source.
+//   - If the same item is in two sources (say a sets file and a mixed file), it counts the HIGHEST quantity, never the sum.
+//     Loose and minifig part counts work the same way (highest, not summed).
+//   - The base layer = all sources merged. In-app edits and missing parts sit on top, exactly as before.
+// HOW IT HOOKS IN (no collection.js change): each file is first run through the normal upload chain with rendering held
+// back, to capture what importer.js, collection.js (studMeta) and beval.js (studBEFile) read from it. Then all sources are
+// written out as one BrickLink-style CSV (with the value, cost, date, condition, currency and BrickEconomy columns those
+// files already understand) and loaded through the same chain once. Every module sees one merged collection, and it all
+// persists across reloads the same way a single upload does.
+const SRC_KEY='studCollSources';
+let SOURCES=ld(SRC_KEY,null);
+let capturing=false,composing=false,composeNote='';
+const saveSources=()=>sv(SRC_KEY,SOURCES||[]);
+function hashText(t){let h=5381;for(let i=0;i<t.length;i++)h=((h<<5)+h+t.charCodeAt(i))>>>0;return h.toString(36)+'.'+t.length;}
+function kindOf(s){const ns=Object.keys(s.sets||{}).length,nf=Object.keys(s.figs||{}).length,np=(s.figParts||0)+(s.looseParts||0);return ns&&nf?'mixed':ns?'sets':nf?'figs':np?'parts':'empty';}
+const KIND_LABEL={sets:'Sets file',figs:'Minifigs file',mixed:'Sets and minifigs file',parts:'Parts file',empty:'Empty file'};
+const plural=(n,w)=>`${n.toLocaleString()} ${w}${n===1?'':'s'}`;
+function srcCounts(s){const b=[];const ns=Object.keys(s.sets||{}).length,nf=Object.keys(s.figs||{}).length,np=(s.figParts||0)+(s.looseParts||0);
+  if(ns)b.push(plural(ns,'set'));if(nf)b.push(plural(nf,'minifig'));if(np)b.push(plural(np,'part'));return b.join(', ')||'nothing we recognize';}
+function srcTitle(s){return s.legacy?'Earlier upload':KIND_LABEL[s.kind]||'File';}
+function sourcesNote(){const S=SOURCES||[];if(!S.length)return '';const parts=S.map(s=>`${srcTitle(s)} (${srcCounts(s)})`);
+  return 'Loaded: '+(parts.length>1?parts.slice(0,-1).join(', ')+' and '+parts[parts.length-1]:parts[0])+'.';}
+function slimMeta(m){return m?{cur:m.cur||null,fmt:m.fmt||'',sets:m.sets||{},figs:m.figs||{},parts:m.parts||{v:0,q:0}}:null;}
+function hasCollection(){if((SOURCES||[]).length)return true;const b=getBase();if(b&&(Object.keys(b.sets).length||Object.keys(b.figs).length))return true;
+  return typeof owned!=='undefined'&&owned&&Object.keys(owned).length>0;}
+// a collection loaded before this feature becomes one source ("Earlier upload")
+function migrateLegacy(){
+  if(SOURCES)return;SOURCES=[];if(isDemo())return;
+  const b=getBase();if(!b||!(Object.keys(b.sets).length||Object.keys(b.figs).length))return;
+  const ex=ld('brickExtras',null)||{},m=fileMeta()||(()=>{const c=ld(LS.meta,null);return c&&!c.ce?c:null;})(),be=ld('studBEFile',null);
+  const s={id:'legacy',legacy:1,name:'Earlier upload',hash:'',t:b.t||Date.now(),sets:Object.assign({},b.sets),figs:JSON.parse(JSON.stringify(b.figs)),
+    figParts:ex.figParts||0,looseParts:ex.looseParts||0,meta:slimMeta(m),be:be?{sets:be.sets||{},figs:be.figs||{}}:null};
+  s.kind=kindOf(s);SOURCES.push(s);saveSources();
+}
 // Loose minifigs the importer couldn't see: files with no Item Type / Category column (a plain "Item No,Qty" list),
-// a pasted list, or a Brickset/other CSV with minifig numbers. importer.js only reads minifigs from BrickLink-style
-// typed rows (type M / Minifigures category), XML, or a fig_num column, and set-list parsing drops anything that isn't a set.
-// Only runs when the importer found no minifigs at all. Recognizes fig-123456 ids, BrickLink ids known to figids.js
-// (sw0001, col483, colshr01 ...), and BrickLink CMF-style ids (col..., starting with col and ending in digits).
+// a pasted list, or a Brickset/other CSV with minifig numbers. Recognizes fig-123456 ids, BrickLink ids known to figids.js
+// (sw0001, col483, colshr01 ...), and BrickLink CMF-style ids (col..., ending in digits). Used only when the importer found no minifigs.
 function looksFig(c){
   if(!c||c.length>24||!/\d/.test(c))return null;
   if(/^fig-\d{6}$/i.test(c))return (typeof FIGNAMES!=='undefined'&&FIGNAMES[c.toLowerCase()])?c.toLowerCase():null;
@@ -131,29 +161,139 @@ function looksFig(c){
   try{const r=typeof figIds==='function'?figIds(c):null;if(r&&r.fig)return c;}catch(e){}
   return /^col[a-z]*\d+$/i.test(c)?c:null;
 }
-function rescueLooseFigs(text){
-  if(isDemo())return;
-  text=String(text||'').replace(/^\ufeff/,'');if(!text.trim()||/<ITEM>/i.test(text))return;
-  if(typeof extras!=='undefined'&&extras&&extras.figs&&Object.keys(extras.figs).length)return;
-  const found={};
+function findLooseFigs(text){
+  text=String(text||'').replace(/^\ufeff/,'');const found={};if(!text.trim()||/<ITEM>/i.test(text))return found;
   for(const line of text.split(/\r?\n/)){
     const cells=(/[,\t;]/.test(line)?line.split(/[,\t;]/):line.trim().split(/\s+/)).map(c=>c.trim().replace(/^"|"$/g,'')); // a pasted line like "sw0002 1" splits on spaces
     for(let i=0;i<cells.length;i++){const id=looksFig(cells[i]);if(!id)continue;
       const q=parseInt(cells[i+1]);const f=found[id]||(found[id]={qty:0,name:'',theme:''});f.qty+=(q>0&&q<1000?q:1);break;}
   }
-  const ids=Object.keys(found);if(!ids.length)return;
-  if(typeof extras==='undefined'||!extras)extras={figs:{},figParts:0,looseParts:0,format:'Set list',note:''};
-  extras.figs=extras.figs||{};
-  for(const id of ids){const fid=/^fig-/i.test(id)?id:((typeof figIds==='function'&&figIds(id).fig)||id);
-    extras.figs[id]={qty:found[id].qty,name:figLabel(id),theme:figThemeOf(fid,/^fig-/i.test(id)?blOf(id):id)};}
-  extras.msg='';
-  extras.note=(extras.note?extras.note+' ':'')+`Also found ${ids.length} loose minifig${ids.length>1?'s':''} by number.`;
-  try{const keep=JSON.parse(localStorage.getItem('brickExtras')||'null')||{};keep.figs=extras.figs;keep.note=extras.note;keep.figParts=extras.figParts||0;keep.looseParts=extras.looseParts||0;keep.format=extras.format;localStorage.setItem('brickExtras',JSON.stringify(keep));}catch(e){}
-  snapBase();absorb();render(owned);
+  for(const id in found){const fid=/^fig-/i.test(id)?id:((typeof figIds==='function'&&figIds(id).fig)||id);
+    found[id].name=figLabel(id);found[id].theme=figThemeOf(fid,/^fig-/i.test(id)?blOf(id):id);}
+  return found;
 }
-// The demo replaces your collection: forget the base snapshot (your app edits stay saved for your own collection)
+// run one file through the normal chain with rendering held back, and keep what each module read from it
+function capture(text,name){
+  capturing=true;try{loadCollection(text);}finally{capturing=false;}
+  const own=Object.assign({},(typeof owned!=='undefined'&&owned)||{}),ex=(typeof extras!=='undefined'&&extras)||{};
+  const figs={};for(const id in (ex.figs||{})){const f=ex.figs[id];if(f&&f.qty>0)figs[id]={qty:f.qty,name:f.name||'',theme:f.theme||''};}
+  if(!Object.keys(figs).length)Object.assign(figs,findLooseFigs(text));
+  const m=ld(LS.meta,null),be=ld('studBEFile',null);
+  const s={id:'s'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),name:String(name||'Upload').slice(0,80),hash:hashText(String(text||'')),t:Date.now(),
+    sets:own,figs,figParts:ex.figParts||0,looseParts:ex.looseParts||0,meta:slimMeta(m),be:be?{sets:be.sets||{},figs:be.figs||{}}:null,fmt:ex.format||''};
+  s.kind=kindOf(s);return s;
+}
+// all sources -> one BrickLink-style CSV that importer.js, collection.js and beval.js all read
+function buildCSV(S){
+  const q=v=>{v=v==null?'':String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+  const num=v=>v==null||v===''||!isFinite(v)?'':String(Math.round(v*10000)/10000);
+  const lines=[['Item Type','Item No','Description','Category','Quantity','Condition','Value','Value New','Value Used','Price Paid','Date Acquired','Currency','BrickEconomy Value','BrickEconomy Value New','BrickEconomy Value Used'].join(',')];
+  const best={};S.forEach(s=>{for(const k in s.sets){const n=s.sets[k]|0;const key='S|'+k;if(n>0&&(!best[key]||n>best[key].n||(n===best[key].n&&s.t>best[key].s.t)))best[key]={s,n,id:k,type:'S'};}
+    for(const id in s.figs){const n=s.figs[id].qty|0;const key='M|'+id;if(n>0&&(!best[key]||n>best[key].n||(n===best[key].n&&s.t>best[key].s.t)))best[key]={s,n,id,type:'M'};}});
+  for(const key in best){const {s,n,id,type}=best[key];const isS=type==='S';
+    const me=s.meta&&(isS?s.meta.sets:s.meta.figs)&&(isS?s.meta.sets:s.meta.figs)[id],be=s.be&&(isS?s.be.sets:s.be.figs)&&(isS?s.be.sets:s.be.figs)[id];
+    const f=isS?null:s.figs[id];
+    const desc=isS?(SETS[id]?SETS[id][0]:''):(f.name||figLabel(id));
+    const cat=isS?'Sets':'Minifigures / '+String(f.theme||'Other').replace(/\//g,'-');
+    const val=me&&me.vq?me.v/me.vq:'',cost=me&&me.cq?me.c/me.cq:'',bev=be&&be.vq?be.v/be.vq:'';
+    const conds=Object.entries((me&&me.cond)||{}).filter(e=>e[1]>0);let left=n;const rows=[];
+    for(const [c,cq] of conds){if(left<=0)break;const take=Math.min(cq,left);rows.push([c,take]);left-=take;}
+    if(left>0)rows.push(['',left]);
+    for(const [c,cq] of rows)lines.push([isS?'S':'M',id,desc,cat,cq,c,num(val),num(me&&me.vn),num(me&&me.vu),num(cost),(me&&me.d)||'',(s.meta&&s.meta.cur)||'',num(bev),num(be&&be.vn),num(be&&be.vu)].map(q).join(','));
+  }
+  let fp=null,lp=null;S.forEach(s=>{if((s.figParts||0)>((fp&&fp.figParts)||0))fp=s;if((s.looseParts||0)>((lp&&lp.looseParts)||0))lp=s;});
+  if(fp)lines.push(['P','973','Minifig parts','Minifig Parts',fp.figParts,'','','','','','','','','',''].map(q).join(','));
+  if(lp){const pm=lp.meta&&lp.meta.parts,pv=pm&&pm.v?pm.v/lp.looseParts:'';lines.push(['P','3001','Loose parts','Parts',lp.looseParts,'',num(pv),'','','','',(lp.meta&&lp.meta.cur)||'','','',''].map(q).join(','));}
+  return lines.join('\n')+'\n';
+}
+function compose(origText){
+  composeNote=sourcesNote();composing=true;
+  try{loadCollection(buildCSV(SOURCES||[]));}finally{composing=false;}
+  if(origText){try{importMissing(origText);}catch(e){}}
+}
+function ingest(text,name,mode){
+  migrateLegacy();
+  let s;try{s=capture(text,name);}catch(e){console.error('colledit capture',e);capturing=false;}
+  if(!s){compose(null);return null;}
+  if(mode==='replace')SOURCES=s.kind==='empty'?[]:[s];
+  else if(s.kind!=='empty'){SOURCES=(SOURCES||[]).filter(x=>!((x.kind===s.kind&&s.kind!=='mixed')||(x.name===s.name&&!x.legacy)||(s.hash&&x.hash===s.hash)));SOURCES.push(s);}
+  saveSources();compose(text);return s;
+}
+function removeSource(id){SOURCES=(SOURCES||[]).filter(x=>x.id!==id);saveSources();compose(null);}
+
+// ---------- wrap render + loadCollection (outermost) ----------
+let freshUpload=false;
+if(typeof render==='function'){const _r=render;render=function(o){
+  if(capturing)return; // a file being read for its source: nothing is drawn or saved
+  try{if(!isDemo()){if(freshUpload){freshUpload=false;const fm=ld(LS.meta,null);if(fm)sv(LS.metaFile,fm);snapBase();absorb();
+    if(typeof extras!=='undefined'&&extras){extras.msg='';extras.note=composeNote;}}apply();}}catch(e){console.error('colledit apply',e);}
+  const r=_r.apply(this,arguments);try{paintBars();decorate();}catch(e){console.error('colledit',e);}return r;};}
+if(typeof loadCollection==='function'){const _l=loadCollection;loadCollection=function(text){
+  if(capturing)return _l.apply(this,arguments);
+  if(!composing){ // a direct call (Start my own, scripts): one source, replacing the rest
+    if(isDemo())SOURCES=[];return ingest(text,'Upload','replace');}
+  freshUpload=!isDemo();rm(LS.metaFile);
+  const r=_l.apply(this,arguments);
+  try{const m=ld(LS.meta,null);if(m)sv(LS.metaFile,m);mergeMeta();}catch(e){}
+  freshUpload=false;
+  try{const k=JSON.parse(localStorage.getItem('brickExtras')||'null');if(k){k.note=composeNote;localStorage.setItem('brickExtras',JSON.stringify(k));}}catch(e){}
+  return r;};}
+// The demo replaces your collection: forget the sources and base snapshot (your app edits stay saved for your own collection)
 const demoBtn=document.getElementById('demo');
-if(demoBtn)demoBtn.addEventListener('click',()=>{rm(LS.base);rm(LS.metaFile);},true);
+if(demoBtn)demoBtn.addEventListener('click',()=>{rm(LS.base);rm(LS.metaFile);SOURCES=[];saveSources();},true);
+
+// ---------- upload: Add to my collection, or Replace it ----------
+function readAndAsk(file){if(!file)return;file.text().then(t=>askUpload(t,file.name)).catch(e=>console.error(e));}
+document.addEventListener('change',e=>{const t=e.target;if(!t||t.id!=='file')return;e.stopPropagation(); // app.js's own handler would replace the collection
+  const f=t.files&&t.files[0];readAndAsk(f);setTimeout(()=>{try{t.value='';}catch(x){}},0);},true);
+document.addEventListener('click',e=>{const b=e.target&&e.target.closest&&e.target.closest('#go');if(!b)return;e.stopPropagation();e.preventDefault();
+  askUpload(document.getElementById('paste').value,'Pasted list');},true);
+function askUpload(text,name){
+  if(isDemo()||!hasCollection()){ingest(text,name,'replace');return;}
+  migrateLegacy();
+  let P=null;try{P=parseCollection(text);}catch(e){}
+  const pv={sets:(P&&P.sets)||{},figs:(P&&P.figs)||{},figParts:(P&&P.figParts)||0,looseParts:(P&&P.looseParts)||0};
+  if(!Object.keys(pv.figs).length)Object.assign(pv.figs,findLooseFigs(text));
+  pv.kind=kindOf(pv);
+  if(pv.kind==='empty'){toast("We couldn't find anything to add in that file. Your collection didn't change.");return;}
+  const h=hashText(String(text||'')),S=SOURCES||[];
+  const same=S.find(x=>x.hash&&x.hash===h),rep=S.filter(x=>(x.kind===pv.kind&&pv.kind!=='mixed')||(x.name===name&&!x.legacy));
+  const addNote=same?'This file is already loaded, so adding it again won\'t double anything.':rep.length?`Replaces your earlier ${rep.map(x=>srcTitle(x).toLowerCase()+(x.legacy?'':' ('+H(x.name)+')')).join(' and ')} and keeps everything else.`:'Keeps everything you already have and adds this file to it.';
+  const bg=sheet('ce-up-bg','Add this file?',`<div class="ce-head">${ICON_BRICK}<h2>Add this file?</h2></div>
+<div class="ce-pick" style="padding-top:0">
+<div class="ce-upfile"><b>${H(name)}</b><div class="small">${KIND_LABEL[pv.kind]}: ${srcCounts(pv)}</div></div>
+<div class="ce-lbl">You already have</div><div class="ce-uphave">${S.map(x=>`<div>${H(srcTitle(x))}${x.legacy?'':' · '+H(x.name)} <span class="muted small">(${srcCounts(x)})</span></div>`).join('')||'<div>Your collection</div>'}</div>
+<div class="ce-upopts">
+<button type="button" class="ce-upbtn ce-upadd" data-mode="add">${ICON_BRICK}<span><b>Add to my collection</b><small>${addNote}</small></span></button>
+<button type="button" class="ce-upbtn ce-uprep" data-mode="replace"><span><b>Replace my collection</b><small>Start over with only this file. Your in-app edits and missing parts stay.</small></span></button>
+</div><div class="ce-go"><button type="button" class="ce-ghost" data-mode="cancel">Cancel</button></div></div>`);
+  bg.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{const m=b.dataset.mode;closeSheet('ce-up-bg');if(m==='cancel')return;
+    const s=ingest(text,name,m);
+    if(s)toast(m==='replace'?`Replaced your collection with ${name}`:(same?`${name} was already loaded. Nothing doubled.`:`Added ${name}: ${srcCounts(s)}`));});
+  setTimeout(()=>{const a=bg.querySelector('.ce-upadd');if(a)a.focus();},30);
+}
+// loaded-files panel (Score tab, under the upload box) and the sources sheet
+function sourcesHTML(){const S=SOURCES||[];
+  return S.map(x=>`<div class="ce-src"><span class="ce-srct">${x.kind==='figs'?ICON_FIG:ICON_BRICK}<span><b>${H(srcTitle(x))}</b>${x.legacy?'':` · ${H(x.name)}`}<small>${srcCounts(x)}</small></span></span><button type="button" class="ce-ghost" data-src-rm="${H(x.id)}">Remove</button></div>`).join('');}
+function paintSources(){
+  const ib=document.getElementById('importbox');if(!ib)return;
+  let box=document.getElementById('ce-sources');
+  const S=isDemo()?[]:(SOURCES||[]);
+  if(!S.length){if(box)box.remove();return;}
+  if(!box){box=document.createElement('div');box.id='ce-sources';box.className='ce-bar ce-srcbox';ib.insertAdjacentElement('afterend',box);}
+  box.innerHTML=`<div class="ce-srch">Loaded files</div>${sourcesHTML()}<div class="ce-go" style="margin-top:6px"><button type="button" class="ce-add" data-ce="upload">${ICON_BRICK}Upload another file</button></div><div class="muted small">BrickLink exports sets and minifigs separately. Upload both and they add together.</div>`;
+}
+document.addEventListener('click',e=>{
+  const rmb=e.target.closest&&e.target.closest('[data-src-rm]');
+  if(rmb){e.preventDefault();if(rmb.dataset.armed!=='1'){rmb.dataset.armed='1';rmb.textContent='Tap again to remove';rmb.classList.add('ce-danger');return;}
+    const id=rmb.dataset.srcRm,x=(SOURCES||[]).find(s=>s.id===id);removeSource(id);toast(`Removed ${x?srcTitle(x).toLowerCase():'that file'} from your collection`);
+    const sh=document.getElementById('ce-src-bg');if(sh){closeSheet('ce-src-bg');if((SOURCES||[]).length)openSources();}return;}
+  const up=e.target.closest&&e.target.closest('[data-ce="upload"],[data-ce="files"]');
+  if(up){e.preventDefault();if(up.dataset.ce==='files')openSources();else pickFile();}
+});
+function pickFile(){let inp=document.getElementById('ce-file');if(!inp){inp=document.createElement('input');inp.type='file';inp.id='ce-file';inp.hidden=true;inp.accept='.csv,.xml,.txt,text/csv,text/xml,application/xml,text/plain';document.body.appendChild(inp);
+  inp.addEventListener('change',()=>{const f=inp.files&&inp.files[0];closeSheet('ce-src-bg');readAndAsk(f);setTimeout(()=>{inp.value='';},0);});}inp.click();}
+function openSources(){sheet('ce-src-bg','Loaded files',`<div class="ce-head">${ICON_BRICK}<h2>Loaded files</h2></div><div class="ce-pick" style="padding-top:0">${sourcesHTML()||'<p class="ce-empty">No files loaded.</p>'}<div class="ce-go"><button type="button" class="ce-add" data-ce="upload">${ICON_BRICK}Upload another file</button></div><p class="muted small">Removing a file takes its sets and minifigs out. Your in-app edits and missing parts stay.</p></div>`);}
 
 if(typeof renderSets==='function'){const _rs=renderSets;renderSets=function(){const r=_rs.apply(this,arguments);try{decorate();}catch(e){}return r;};}
 if(typeof renderFigs==='function'){const _rf=renderFigs;renderFigs=function(){const r=_rf.apply(this,arguments);try{decorate();}catch(e){}return r;};}
@@ -291,6 +431,22 @@ const css=document.createElement('style');css.setAttribute('data-ss','colledit')
 .ce-list .ce-row{cursor:default}
 .ce-list .ce-row button{margin:0;padding:6px 10px;font-size:12px}
 .ce-empty{color:#E4E5E2;font-size:14px;padding:10px 0}
+.ce-upfile{background:#05131D;border:2px solid #6C6E68;border-radius:8px;padding:10px 12px;font-size:15px;overflow-wrap:anywhere}
+.ce-upfile .small{margin-top:2px;color:#E4E5E2}
+.ce-uphave{font-size:14px;line-height:1.6}
+.ce-upopts{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.ce-upbtn{display:flex;align-items:center;gap:10px;text-align:left;margin:0;padding:12px 14px;border-radius:8px;width:100%;box-sizing:border-box}
+.ce-upbtn span{display:block}.ce-upbtn b{display:block;font-size:16px}.ce-upbtn small{display:block;font-weight:400;font-size:12px;margin-top:2px;line-height:1.35}
+.ce-upadd{background:#F2CD37;color:#05131D;border:2px solid #05131D;box-shadow:inset 0 3px 0 #FFE68A,inset 0 -3px 0 #A8861A}
+.ce-upadd .ce-ic{width:30px;height:24px}
+.ce-uprep{background:#3A3D40;color:#F2F3F2;border:2px solid #C91A09}
+.ce-srcbox{flex-direction:column;align-items:stretch;gap:6px;margin-top:-6px}
+.ce-srch{font-weight:800;color:#F2CD37}
+.ce-src{display:flex;align-items:center;gap:8px;justify-content:space-between;background:#05131D;border-radius:6px;padding:6px 8px}
+.ce-src .ce-srct{display:flex;align-items:center;gap:8px;min-width:0;font-size:14px;overflow-wrap:anywhere}
+.ce-src small{display:block;color:#E4E5E2;font-size:12px}
+.ce-src button{margin:0;flex:0 0 auto}
+.ce-pick .ce-src{margin-bottom:6px}
 `;document.head.appendChild(css);
 
 // ---------- toast ----------
@@ -301,13 +457,14 @@ function toast(msg){let t=document.getElementById('ce-toast');if(!t){t=document.
 // ---------- bars on the Sets and Figs tabs ----------
 function counts(){let a=0,e=0,r=0;for(const kind of ['set','fig'])for(const id in (kind==='set'?EDITS.sets:EDITS.figs)){const s=status(kind,id);if(s==='added')a++;else if(s==='edited')e++;else if(s==='removed')r++;}return {a,e,r,n:a+e+r};}
 function paintBars(){
+  try{paintSources();}catch(e){}
   [['sets','set'],['figs','fig']].forEach(([tab,kind])=>{
     const host=document.getElementById(tab==='sets'?'mysets':'myfigs');if(!host)return;
     let bar=document.getElementById('ce-bar-'+tab);
     if(!bar){bar=document.createElement('div');bar.id='ce-bar-'+tab;bar.className='ce-bar';host.parentNode.insertBefore(bar,host);}
     if(isDemo()){bar.innerHTML=`<span class="ce-sum">This is the demo collection. Start your own to add ${kind==='set'?'sets':'minifigs'} here.</span><span class="ce-sp"></span><button type="button" class="ce-add" data-ce="own">${ICON_BRICK}Start my own</button>`;return;}
     const c=counts(),bits=[];if(c.a)bits.push(c.a+' added');if(c.e)bits.push(c.e+' edited');if(c.r)bits.push(c.r+' removed');
-    bar.innerHTML=`<button type="button" class="ce-add" data-ce="add" data-kind="${kind}">${kind==='set'?ICON_BRICK:ICON_FIG}Add ${kind==='set'?'a set':'a minifig'}</button><span class="ce-sp"></span>${c.n?`<button type="button" class="ce-ghost" data-ce="review" title="${H(bits.join(' · '))}">In-app edits (${c.n})</button>`:''}<button type="button" class="ce-ghost" data-ce="export" title="Download your collection, with in-app edits, as a CSV you can re-upload">Export CSV</button>`;
+    bar.innerHTML=`<button type="button" class="ce-add" data-ce="add" data-kind="${kind}">${kind==='set'?ICON_BRICK:ICON_FIG}Add ${kind==='set'?'a set':'a minifig'}</button><span class="ce-sp"></span>${c.n?`<button type="button" class="ce-ghost" data-ce="review" title="${H(bits.join(' · '))}">In-app edits (${c.n})</button>`:''}${(SOURCES||[]).length?`<button type="button" class="ce-ghost" data-ce="files" title="${H(sourcesNote())}">Files (${SOURCES.length})</button>`:''}<button type="button" class="ce-ghost" data-ce="export" title="Download your collection, with in-app edits, as a CSV you can re-upload">Export CSV</button>`;
   });
 }
 function decorate(){
