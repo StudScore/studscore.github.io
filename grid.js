@@ -128,7 +128,8 @@ function renderFigsSorted(){
   };
   const sort=cmp[figSort]?figSort:'theme';
   rows.sort(cmp[sort]);
-  if(!rows.length){el.innerHTML='';return;}
+  if(!rows.length){const hasSets=typeof owned!=='undefined'&&owned&&Object.keys(owned).length>0&&!(typeof localStorage!=='undefined'&&localStorage.getItem('studDemo')==='true');
+    el.innerHTML=hasSets?`<h3>My Minifigs (0)</h3><p class="muted">Minifigs from your sets show here once you tick them as owned in that set's Parts checklist (open a set, then Parts and missing pieces). Loose minifigs from your files, or added with Add a minifig, show here too.</p>`:'';return;}
   const nLoose=rows.filter(f=>(f.loose||0)>0).length,nSets=rows.filter(f=>(f.qty||0)>(f.loose||0)).length;
   const allRows=rows.length,show=figShow==='loose'?'loose':figShow==='sets'?'sets':'all';
   if(show==='loose')rows.splice(0,rows.length,...rows.filter(f=>(f.loose||0)>0));
@@ -145,7 +146,7 @@ function renderFigsSorted(){
   el.innerHTML=`<h3>My Minifigs (${allRows})</h3><div class="setctl"><label class="muted small">Sort by</label><select id="figsort">
 <option value="theme">Theme</option><option value="year_old">Year (oldest first)</option><option value="year_new">Year (newest first)</option><option value="pieces">Piece count</option></select>
 <span style="display:inline-flex;gap:8px;align-items:center;white-space:nowrap"><label class="muted small" for="figshow">Show</label><select id="figshow"><option value="all">All (${allRows})</option><option value="loose">Loose (${nLoose})</option><option value="sets">From sets (${nSets})</option></select></span></div>
-${!rows.length?`<p class="muted">${show==='loose'?'No loose minifigs yet. Upload a BrickLink file with minifig rows, or tap Add a minifig.':'No minifigs from sets.'}</p>`:''}
+${!rows.length?`<p class="muted">${show==='loose'?'No loose minifigs yet. Upload a BrickLink file with minifig rows, or tap Add a minifig.':'No minifigs from sets yet. Open a set and tick the minifigs you have in its Parts checklist.'}</p>`:''}
 <div class="sets">${html}</div>${rows.length>LIMIT?`<button id="figmore">${figShowAll?'Show fewer':'Show all '+rows.length+' minifigs'}</button>`:''}`;
   const sel=document.getElementById('figsort');if(sel){sel.value=sort;sel.onchange=()=>{figSort=sel.value;renderFigs();};}
   const shw=document.getElementById('figshow');if(shw){shw.value=show;shw.onchange=()=>{figShow=shw.value;figShowAll=false;renderFigs();};}

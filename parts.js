@@ -12,6 +12,11 @@
 //          src:'rb'|'bl', s:{m:missingPieces, l:missingLots, k:sheetsMissing, n:totalPieces, L:lots}, t}
 //   Line keys: "part|blColor" (plain), "part|blColor|stickeredPart" (paired), "stk|sheetNo" (sticker sheet).
 //   No record yet: Sealed and New count as all ticked, anything else as "not checked yet" (no Missing badge).
+//   ps:1 once a PART line, Check all or Uncheck all is touched ("parts checklist started"): only then do unticked parts and
+//   minifigs count as missing. Ticking minifigs alone does not start it.
+// Minifigs of a set are lines too ("fig|fig-001234", from SETFIGS, need = per copy × sets owned). A set's minifig counts as
+//   owned on the Figs tab ONLY when it is ticked here (or the set is Sealed/New with an untouched list, where everything
+//   shows ticked). colledit.js reads figsOwned() for that. Loose minifigs are never affected.
 (function(){
 'use strict';
 const LS='studParts';
@@ -29,7 +34,8 @@ const BLC={"125":["Mx Light Gray","9C9C9C"],"211":["Mx Foil Light Gray","9C9C9C"
 // Rebrickable part categories
 const CATS={"1":"Baseplates","3":"Bricks Sloped","4":"Duplo, Quatro and Primo","5":"Bricks Special","6":"Bricks Wedged","7":"Containers","8":"Technic Bricks","9":"Plates Special","11":"Bricks","12":"Technic Connectors","13":"Minifigs","14":"Plates","15":"Tiles Special","16":"Windows and Doors","17":"Gear Parts","18":"Hinges, Arms and Turntables","19":"Tiles","20":"Bricks Round and Cones","21":"Plates Round Curved and Dishes","22":"Pneumatics","23":"Panels","24":"Other","25":"Technic Steering, Suspension and Engine","26":"Technic Special","27":"Minifig Accessories","28":"Animals / Creatures","29":"Wheels and Tyres","30":"Tubes and Hoses","31":"String, Bands and Reels","32":"Bars, Ladders and Fences","33":"Rock","34":"Supports, Girders and Cranes","35":"Transportation - Sea and Air","36":"Transportation - Land","37":"Bricks Curved","38":"Flags, Banners and Signs","39":"Magnets and Holders","40":"Technic Panels","41":"Large Buildable Figures","42":"Belville, Scala and Fabuland","43":"Znap","44":"Mechanical","45":"Electronics","46":"Technic Axles","47":"Windscreens and Fuselage","48":"Clikits","49":"Plates Wedged","50":"HO Scale","51":"Technic Beams","52":"Technic Gears","53":"Technic Pins","54":"Technic Bushes","55":"Technic Beams Special","56":"Tools","57":"Non-Buildable Figures (Duplo, Fabuland, etc)","58":"Stickers","59":"Minifig Heads","60":"Minifig Upper Body","61":"Minifig Lower Body","62":"Minidoll Heads","63":"Minidoll Upper Body","64":"Minidoll Lower Body","65":"Minifig Headwear","66":"Modulex","67":"Tiles Round and Curved","68":"Projectiles / Launchers","69":"Energy Effects","70":"Minifig Hipwear","71":"Minifig Neckwear","72":"Minifig Headwear Accessories","73":"Minifig Shields, Weapons, & Tools","74":"Animal / Creature Accessories","75":"Animal / Creature Body Parts","76":"Plants & Trees","77":"Non-System Parts","78":"Pen & Watch"};
 
-let ST=(()=>{const s=ld(LS,null)||{};return {sets:s.sets||{},figs:s.figs||{}};})();
+let ST=(()=>{const s=ld(LS,null)||{};const o={sets:s.sets||{},figs:s.figs||{}};
+  for(const b of [o.sets,o.figs])for(const k in b){const r=b[k];if(r&&!('ps' in r)&&!r.v2){r.ps=1;if(r.b)r.fb=1;}if(r)r.v2=1;}return o;})();
 let saveT=0,dirty=false;const save=()=>{dirty=true;clearTimeout(saveT);saveT=setTimeout(flush,250);};
 const flush=()=>{clearTimeout(saveT);if(!dirty)return;dirty=false;sv(LS,ST);};
 window.addEventListener('pagehide',flush);
@@ -117,30 +123,40 @@ function fromBL(e){
   const sheets=L.filter(o=>o.sheet);if(sheets.length&&extra.length)sheets[0].uses=extra.map(x=>x.name.replace(/\s*-\s*Sets?\s.*$/,''));
   return L;
 }
-function build(D){
+function figNeeds(kind,id){if(kind!=='set'||typeof SETFIGS==='undefined')return [];const n=Math.max(1,(typeof owned!=='undefined'&&owned&&owned[id])|0||1);return (SETFIGS[id]||[]).map(([f,q])=>[f,q*n]);}
+function figLines(kind,id){return figNeeds(kind,id).map(([f,q])=>({k:'fig|'+f,no:f,name:(typeof figName==='function'?figName(f):f),col:{n:'',rgb:'',bl:null},q,img:(typeof figImg==='function'?figImg(f):''),grp:'Minifigs',fig:true}));}
+function build(D,kind,id){
+  D=D||{};
   const useBL=!!(D.bl&&D.bl.e&&D.bl.e.some(x=>x[0]==='P'));
   const L=useBL?fromBL(D.bl.e):(D.rb?fromRB(D.rb):[]);
   L.sort((a,b)=>(a.sheet-b.sheet)||a.name.localeCompare(b.name)||a.col.n.localeCompare(b.col.n));
+  L.unshift(...figLines(kind,id));
   // merge accidental duplicate keys
   const m=new Map();for(const o of L){const x=m.get(o.k);if(x)x.q+=o.q;else m.set(o.k,o);}
-  return {src:useBL?'bl':'rb',lines:[...m.values()],hasStickers:useBL&&L.some(o=>o.st),date:useBL?D.bl.t:''};
+  return {src:useBL?'bl':(D.rb?'rb':''),lines:[...m.values()],hasStickers:useBL&&L.some(o=>o.st),date:useBL?D.bl.t:''};
 }
 
 // ---------- have counts ----------
-function ensure(kind,id,cond){let r=rec(kind,id);if(!r){r={b:newCond(cond)?1:0,h:{},sa:{},t:Date.now()};bag(kind)[id]=r;}return r;}
-function have(r,o,cond){if(r&&o.k in r.h)return Math.min(o.q,r.h[o.k]);const b=r?r.b:(newCond(cond)?1:0);return b?o.q:0;}
+function ensure(kind,id,cond){let r=rec(kind,id);if(!r){r={b:newCond(cond)?1:0,h:{},sa:{},t:Date.now(),v2:1};bag(kind)[id]=r;}return r;}
+// minifig lines are never ticked by default (not even Sealed/New): only a tick or Check all (r.fb) makes them yours
+function have(r,o,cond){if(r&&o.k in r.h)return Math.min(o.q,r.h[o.k]);if(o.fig)return r&&r.fb?o.q:0;const b=r?r.b:(newCond(cond)?1:0);return b?o.q:0;}
 // a list built from a different source (Rebrickable before, BrickLink now): carry the plain-part counts over to the paired lines
 function migrate(r,M){
-  if(!r||r.src===M.src)return;
+  if(!r||!M.src||r.src===M.src)return;
   if(M.src==='bl'){const base={};for(const o of M.lines)if(o.st){const bk=o.no+'|'+o.col.bl;if(bk in r.h&&!(o.k in r.h)){base[bk]=base[bk]==null?r.h[bk]:base[bk];const n=Math.min(o.q,base[bk]);r.h[o.k]=n;base[bk]-=n;}}
     for(const bk in base)r.h[bk]=Math.max(0,base[bk]);}
   r.src=M.src;
 }
 function tally(M,r,cond){
-  let n=0,L=0,m=0,l=0,k=0;
-  for(const o of M.lines){const h=have(r,o,cond);if(o.sheet){if(h<o.q)k+=o.q-h;continue;}n+=o.q;L++;if(h<o.q){m+=o.q-h;l++;}}
-  return {n,L,m,l,k};
+  let n=0,L=0,m=0,l=0,k=0,F=0,f=0;
+  const fm=!!(r&&r.ps); // unticked minifigs only count as missing once the parts checklist is started by hand
+  for(const o of M.lines){const h=have(r,o,cond);if(o.fig){F+=o.q;if(fm&&h<o.q)f+=o.q-h;continue;}if(o.sheet){if(h<o.q)k+=o.q-h;continue;}n+=o.q;L++;if(h<o.q){m+=o.q-h;l++;}}
+  return {n,L,m,l,k,F,f};
 }
+const started_=(r,cond)=>!!(r&&r.ps)||(newCond(cond)&&(!r||!!r.b));
+// minifigs of a set that count as owned: {figId: count}. Untouched used set: none.
+function figsOwned(setId,cond){const r=rec('set',setId),out={};
+  for(const [f,q] of figNeeds('set',setId)){const o={k:'fig|'+f,q,fig:true};const h=have(r,o,cond);if(h>0)out[f]=h;}return out;}
 function storeSummary(kind,id,M,cond){const r=rec(kind,id);if(!r)return;r.s=tally(M,r,cond);r.t=Date.now();save();}
 
 // ---------- public summary (tiles, badge, export) ----------
@@ -148,22 +164,26 @@ function storeSummary(kind,id,M,cond){const r=rec(kind,id);if(!r)return;r.s=tall
 function summary(kind,id,cond){
   const r=rec(kind,id);
   if(!r)return newCond(cond)?{state:'complete'}:{state:'none'};
-  const s=r.s;if(!s)return {state:r.b?'complete':'started',m:0,l:0,k:0};
-  return {state:(s.m||s.k)?'missing':'complete',m:s.m,l:s.l,k:s.k,n:s.n,L:s.L};
+  if(!r.ps)return newCond(cond)&&r.b?{state:'complete'}:{state:'none'}; // only minifigs ticked so far
+  const s=r.s;if(!s)return {state:r.b?'complete':'started',m:0,l:0,k:0,f:0};
+  return {state:(s.m||s.k||s.f)?'missing':'complete',m:s.m,l:s.l,k:s.k,f:s.f|0,n:s.n,L:s.L};
 }
 function missingText(kind,id){const s=summary(kind,id);if(s.state!=='missing')return '';
-  const b=[];if(s.m)b.push(`${s.m} part${s.m>1?'s':''} in ${s.l} lot${s.l>1?'s':''}`);if(s.k)b.push(s.k>1?`${s.k} sticker sheets`:'sticker sheet');return b.join(', ');}
+  const b=[];if(s.m)b.push(`${s.m} part${s.m>1?'s':''} in ${s.l} lot${s.l>1?'s':''}`);if(s.f)b.push(`${s.f} minifig${s.f>1?'s':''}`);if(s.k)b.push(s.k>1?`${s.k} sticker sheets`:'sticker sheet');return b.join(', ');}
 
 // ---------- rendering ----------
 function swatch(c){return `<i class="pl-sw" style="background:#${H(c.rgb)}"></i>`;}
+// colledit.js plugs in loose-fig ownership: LOOSE.count(figId) -> loose copies, LOOSE.add(figId) marks one more as owned (loose)
+const LOOSE={count:null,add:null};
 function rowHTML(o,h,sa){
   const full=h>=o.q,part=h>0&&!full,need=o.q;
   const img=`<span class="pl-im${o.st?' pl-pair':''}"><img alt="" loading="lazy" decoding="async" src="${H(o.img)}" onerror="this.onerror=null;${o.big?`this.src='${H(o.big)}'`:`this.style.visibility='hidden'`}">${o.st?`<img class="pl-stk" alt="" loading="lazy" decoding="async" src="${H(o.st.img)}" onerror="this.onerror=null;this.src='${H(o.st.big)}'"><b class="pl-stl">Sticker</b>`:''}${o.sheet?'<b class="pl-stl">Sheet</b>':''}</span>`;
-  const sub=o.sheet?`Sticker sheet · ${H(o.no)}${o.uses?` · also for: ${H(o.uses.slice(0,3).join('; '))}${o.uses.length>3?'…':''}`:''} · not counted in pieces`
+  const sub=o.fig?`Minifig · ${H(o.no)}${need===1?'<span class="pl-x1"> · ×1</span>':''}`:o.sheet?`Sticker sheet · ${H(o.no)}${o.uses?` · also for: ${H(o.uses.slice(0,3).join('; '))}${o.uses.length>3?'…':''}`:''} · not counted in pieces`
     :`${swatch(o.col)}${H(o.col.n)} · ${H(o.no)}${need===1?'<span class="pl-x1"> · ×1</span>':''}`;
-  const stk=o.st?`<span class="pl-sti">With sticker: ${H(o.st.name)} <span class="pl-stno">(${H(o.st.no)})</span></span><button type="button" class="pl-sa" data-sa aria-pressed="${sa?'true':'false'}">${sa?'Sticker applied':'Sticker not applied'}</button>`:'';
+  const lq=o.fig&&LOOSE.count?(LOOSE.count(o.no)|0):-1;
+  const stk=o.fig&&lq>=0?`<button type="button" class="pl-sa pl-loose" data-loose aria-pressed="${lq>0?'true':'false'}">${lq>0?`Owned loose ×${lq} · add one`:'Mark as owned (loose)'}</button>`:o.st?`<span class="pl-sti">With sticker: ${H(o.st.name)} <span class="pl-stno">(${H(o.st.no)})</span></span><button type="button" class="pl-sa" data-sa aria-pressed="${sa?'true':'false'}">${sa?'Sticker applied':'Sticker not applied'}</button>`:'';
   const qty=need>1?`<div class="pl-q"><button type="button" data-d="-1" aria-label="One less">−</button><output class="${full?'ok':part?'pt':''}">${h}/${need}</output><button type="button" data-d="1" aria-label="One more">+</button></div>`:`<div class="pl-q one"><output class="${full?'ok':''}">${full?1:0}/1</output></div>`;
-  return `<div class="pl-r${full?' done':part?' part':''}${o.sheet?' sheet':''}" data-k="${H(o.k)}"><button type="button" class="pl-ck" role="checkbox" aria-checked="${full?'true':part?'mixed':'false'}" aria-label="Have ${H(o.name)}${o.st?' with sticker':''}"></button>${img}<div class="pl-t"><b>${H(o.name)}</b><small>${sub}</small>${stk}</div>${qty}</div>`;
+  return `<div class="pl-r${full?' done':part?' part':''}${o.sheet?' sheet':''}${o.fig?' fig':''}" data-k="${H(o.k)}"><button type="button" class="pl-ck" role="checkbox" aria-checked="${full?'true':part?'mixed':'false'}" aria-label="Have ${H(o.name)}${o.st?' with sticker':''}"></button>${img}<div class="pl-t"><b>${H(o.name)}</b><small>${sub}</small>${stk}</div>${qty}</div>`;
 }
 function mount(slot,kind,id,getCond,onChange){
   const el=document.createElement('div');el.className='pl';el.dataset.id=kind+':'+id;
@@ -172,18 +192,24 @@ function mount(slot,kind,id,getCond,onChange){
   let M=null,onlyMiss=false,grp='color';
   const cond=()=>{try{return getCond?getCond():'';}catch(e){return '';}};
   const head=()=>{
-    const r=rec(kind,id),s=tally(M,r,cond()),started=!!r||newCond(cond());
+    const r=rec(kind,id),s=tally(M,r,cond()),started=started_(r,cond()),fl=s.F?` and ${s.F} minifig${s.F>1?'s':''}`:'';
     const done=s.n-s.m,pct=s.n?Math.round(done/s.n*100):0;
     let msg;
-    if(!started)msg=`<b>Not checked yet.</b> Tick the parts you have. ${s.n.toLocaleString()} parts in ${s.L} lots.`;
-    else if(!s.m&&!s.k)msg=`<b class="ok">Complete.</b> All ${s.n.toLocaleString()} parts in ${s.L} lots checked.`;
-    else msg=`<b class="ms">Missing ${s.m.toLocaleString()} part${s.m===1?'':'s'} in ${s.l} lot${s.l===1?'':'s'}</b>${s.k?` + ${s.k>1?s.k+' sticker sheets':'sticker sheet'}`:''} · ${done.toLocaleString()} of ${s.n.toLocaleString()} checked`;
+    const figOwn=M.lines.reduce((a,o)=>a+(o.fig?have(r,o,cond()):0),0);
+    const figHint=s.F?` Tick the minifigs you have so they count on the Figs tab (${figOwn} of ${s.F} ticked).`:'';
+    if(started&&!(r&&r.ps))msg=`<b class="ok">${H(cond()||'New')}: all ${s.n.toLocaleString()} parts count as there.</b>${figHint}`;
+    else if(!started)msg=`<b>Not checked yet.</b> Tick the parts${s.F?' and minifigs':''} you have. ${s.n.toLocaleString()} parts in ${s.L} lots${fl}.${s.F?` Minifigs count as yours on the Figs tab once ticked${figOwn?` (${figOwn} ticked)`:''}.`:''}`;
+    else if(!s.m&&!s.k&&!s.f)msg=`<b class="ok">Complete.</b> All ${s.n.toLocaleString()} parts in ${s.L} lots${fl} checked.`;
+    else{const mb=[];if(s.m)mb.push(`${s.m.toLocaleString()} part${s.m===1?'':'s'} in ${s.l} lot${s.l===1?'':'s'}`);if(s.f)mb.push(`${s.f} minifig${s.f===1?'':'s'}`);
+      msg=`<b class="ms">Missing ${mb.join(' and ')||'nothing'}</b>${s.k?` + ${s.k>1?s.k+' sticker sheets':'sticker sheet'}`:''} · ${done.toLocaleString()} of ${s.n.toLocaleString()} parts checked`;}
     return {html:`<div class="pl-sum">${msg}</div><div class="pl-bar"><i style="width:${started?pct:0}%"></i></div>`,s,started};
   };
   const paintHead=()=>{const h=head();el.querySelector('.pl-head').innerHTML=h.html;const w=el.querySelector('[data-wl]');if(w)w.hidden=!(h.started&&(h.s.m||h.s.k));
-    const f=el.querySelector('.pl-only');if(f)f.textContent=onlyMiss?'Show all parts':`Show missing only${h.started&&(h.s.l||h.s.k)?' ('+(h.s.l+(h.s.k?1:0))+')':''}`;};
-  const groups=()=>{const g=new Map();for(const o of M.lines){const key=o.sheet?'Stickers':grp==='color'?o.col.n:o.grp;if(!g.has(key))g.set(key,{c:o.sheet?null:(grp==='color'?o.col:null),L:[]});g.get(key).L.push(o);}
-    const arr=[...g.entries()];arr.sort((a,b)=>(a[0]==='Stickers')-(b[0]==='Stickers')||b[1].L.length-a[1].L.length||a[0].localeCompare(b[0]));return arr;};
+    const nm=h.s.l+(h.s.k?1:0)+(h.s.f?figLinesMissing():0);
+    const f=el.querySelector('.pl-only');if(f)f.textContent=onlyMiss?'Show all parts':`Show missing only${h.started&&nm?' ('+nm+')':''}`;};
+  const figLinesMissing=()=>{const r=rec(kind,id),c=cond();return M.lines.filter(o=>o.fig&&have(r,o,c)<o.q).length;};
+  const groups=()=>{const g=new Map();for(const o of M.lines){const key=o.fig?'Minifigs':o.sheet?'Stickers':grp==='color'?o.col.n:o.grp;if(!g.has(key))g.set(key,{c:(o.sheet||o.fig)?null:(grp==='color'?o.col:null),L:[]});g.get(key).L.push(o);}
+    const arr=[...g.entries()];arr.sort((a,b)=>(b[0]==='Minifigs')-(a[0]==='Minifigs')||(a[0]==='Stickers')-(b[0]==='Stickers')||b[1].L.length-a[1].L.length||a[0].localeCompare(b[0]));return arr;};
   const paintList=()=>{
     const r=rec(kind,id),c=cond();let html='',shown=0;
     for(const [name,g] of groups()){
@@ -192,19 +218,19 @@ function mount(slot,kind,id,getCond,onChange){
     }
     el.querySelector('.pl-list').innerHTML=html||`<p class="pl-empty">${onlyMiss?'Nothing missing. This one is complete.':'No parts listed.'}</p>`;
   };
-  const changed=()=>{storeSummary(kind,id,M,cond());paintHead();onChange&&onChange();};
-  const setHave=(o,n)=>{const r=ensure(kind,id,cond());r.h[o.k]=Math.max(0,Math.min(o.q,n));
+  const changed=figs=>{storeSummary(kind,id,M,cond());paintHead();onChange&&onChange({figs:!!figs});};
+  const setHave=(o,n)=>{const r=ensure(kind,id,cond());r.h[o.k]=Math.max(0,Math.min(o.q,n));if(!o.fig)r.ps=1;
     const row=el.querySelector(`.pl-r[data-k="${CSS.escape(o.k)}"]`);
     if(row){if(onlyMiss&&r.h[o.k]>=o.q){row.classList.add('done');row.querySelector('.pl-ck').setAttribute('aria-checked','true');setTimeout(()=>{if(row.isConnected&&onlyMiss&&have(rec(kind,id),o,cond())>=o.q)row.remove();},450);}
       else{const tmp=document.createElement('div');tmp.innerHTML=rowHTML(o,have(r,o,cond()),!!(r.sa&&r.sa[o.k]));row.replaceWith(tmp.firstChild);}}
-    changed();};
+    changed(o.fig);};
   const paint=()=>{
     const src=M.src==='bl'?`BrickLink inventory, fetched with your BrickLink keys${M.date?' on '+H(M.date):''} and saved on this device${M.hasStickers?'. Stickered parts are paired with their plain part':''}`:`Rebrickable inventory (plain parts and sticker sheets)${blKeys()?'':'. Connect BrickLink on the Value tab to see stickered parts'}`;
     el.innerHTML=`<div class="pl-head"></div>
 <div class="pl-tools"><button type="button" class="pl-btn" data-all="1">Check all</button><button type="button" class="pl-btn" data-all="0">Uncheck all</button><button type="button" class="pl-btn pl-only" aria-pressed="${onlyMiss}"></button>
 <label class="pl-grp">Group <select data-grp><option value="color">Color</option><option value="type">Type</option></select></label></div>
 <div class="pl-list"></div>
-<div class="pl-foot"><button type="button" class="pl-btn" data-wl hidden>BrickLink Wanted List (XML)</button><span>Parts list: ${src}. Spare parts not included.${kind==='set'?' Minifigs are below.':''}</span></div>`;
+<div class="pl-foot"><button type="button" class="pl-btn" data-wl hidden>BrickLink Wanted List (XML)</button><span>${src?`Parts list: ${src}. Spare parts not included.`:'No parts list for this item yet.'}${M.lines.some(o=>o.fig)?' Ticked minifigs count as yours on the Figs tab (from sets).':''}</span></div>`;
     el.querySelector('[data-grp]').value=grp;
     paintHead();paintList();
   };
@@ -213,20 +239,22 @@ function mount(slot,kind,id,getCond,onChange){
     const row=t.closest('.pl-r');
     if(row){const o=M.lines.find(x=>x.k===row.dataset.k);if(!o)return;const r=rec(kind,id),h=have(r,o,cond());
       if(t.closest('[data-sa]')){const rr=ensure(kind,id,cond());rr.sa=rr.sa||{};if(rr.sa[o.k])delete rr.sa[o.k];else rr.sa[o.k]=1;save();const b=t.closest('[data-sa]');b.setAttribute('aria-pressed',rr.sa[o.k]?'true':'false');b.textContent=rr.sa[o.k]?'Sticker applied':'Sticker not applied';return;}
+      if(t.closest('[data-loose]')){if(LOOSE.add){LOOSE.add(o.no);const tmp=document.createElement('div');tmp.innerHTML=rowHTML(o,h,false);row.replaceWith(tmp.firstChild);}return;}
       const d=t.closest('[data-d]');
       if(d){setHave(o,h+(+d.dataset.d));return;}
       if(t.closest('.pl-ck')||t.closest('.pl-im')||t.closest('.pl-t')||t.closest('.pl-q.one')){setHave(o,h>=o.q?0:o.q);return;}
       if(t.closest('.pl-q output')){setHave(o,h>=o.q?0:h+1);return;} // tap the count to add one (wraps to 0)
       return;}
     const a=t.closest('[data-all]');
-    if(a){const r=ensure(kind,id,cond());r.b=+a.dataset.all;r.h={};changed();paintList();return;}
+    if(a){const r=ensure(kind,id,cond());r.b=+a.dataset.all;r.fb=r.b;r.h={};r.ps=1;changed(true);paintList();return;}
     if(t.closest('.pl-only')){onlyMiss=!onlyMiss;t.closest('.pl-only').setAttribute('aria-pressed',onlyMiss);paintHead();paintList();return;}
     if(t.closest('[data-wl]')){wanted(kind,id,M,cond());return;}
   });
   el.addEventListener('change',e=>{if(e.target.matches('[data-grp]')){grp=e.target.value;paintList();}});
-  const ready=D=>{if(!el.isConnected&&!el.parentNode)return;M=build(D);const r=rec(kind,id);if(r){migrate(r,M);storeSummary(kind,id,M,cond());}paint();onChange&&onChange();};
-  load(kind,id,ready).then(D=>{if(!D){el.innerHTML=`<p class="pl-empty">No parts list for this ${kind==='set'?'set':'minifig'} yet.</p>`;return;}ready(D);})
-    .catch(err=>{el.innerHTML=`<p class="pl-empty">${H(err.message||'Could not load the parts list.')} <button type="button" class="pl-btn" data-retry>Try again</button></p>`;
+  const ready=D=>{if(!el.isConnected&&!el.parentNode)return;M=build(D,kind,id);const r=rec(kind,id);if(r){migrate(r,M);storeSummary(kind,id,M,cond());}paint();onChange&&onChange({});};
+  load(kind,id,ready).then(D=>{if(!D&&!figNeeds(kind,id).length){el.innerHTML=`<p class="pl-empty">No parts list for this ${kind==='set'?'set':'minifig'} yet.</p>`;return;}ready(D);})
+    .catch(err=>{if(figNeeds(kind,id).length){ready(null);const f=el.querySelector('.pl-foot span');if(f)f.textContent=(err.message||'Could not load the parts list.')+' The minifigs above can still be ticked.';return;}
+      el.innerHTML=`<p class="pl-empty">${H(err.message||'Could not load the parts list.')} <button type="button" class="pl-btn" data-retry>Try again</button></p>`;
       const b=el.querySelector('[data-retry]');if(b)b.onclick=()=>{MEM.delete(kind+':'+id);const s=document.createElement('div');el.replaceWith(s);mount(s,kind,id,getCond,onChange);};});
   el.refreshCond=()=>{if(M){paintHead();paintList();}};
   return el;
@@ -236,20 +264,23 @@ function mount(slot,kind,id,getCond,onChange){
 function wanted(kind,id,M,cond){
   const r=rec(kind,id),items=[];let skipped=0;
   for(const o of M.lines){const miss=o.q-have(r,o,cond);if(miss<=0)continue;
+    if(o.fig&&!(r&&r.ps))continue; // minifigs only count as missing once the parts checklist is started
+    if(o.fig){let bl=null;try{bl=typeof figIds==='function'?figIds(o.no).bl:null;}catch(e){}if(!bl){skipped++;continue;}
+      items.push(`<ITEM><ITEMTYPE>M</ITEMTYPE><ITEMID>${H(bl)}</ITEMID><MINQTY>${miss}</MINQTY><CONDITION>X</CONDITION><REMARKS>${H('Set '+id)}</REMARKS><NOTIFY>N</NOTIFY></ITEM>`);continue;}
     const no=o.st?o.st.no:o.no,c=o.sheet?0:o.col.bl;if(c==null){skipped++;continue;}
     items.push(`<ITEM><ITEMTYPE>P</ITEMTYPE><ITEMID>${H(no)}</ITEMID><COLOR>${c}</COLOR><MINQTY>${miss}</MINQTY><CONDITION>X</CONDITION><REMARKS>${H((kind==='set'?'Set ':'Minifig ')+id+(o.st?', or '+o.no+' plus sticker':''))}</REMARKS><NOTIFY>N</NOTIFY></ITEM>`);}
   const xml=`<?xml version="1.0" encoding="UTF-8"?>\n<INVENTORY>\n${items.join('\n')}\n</INVENTORY>\n`;
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([xml],{type:'application/xml'}));a.download=`wanted-${id}.xml`;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);
-  const n=document.createElement('div');n.className='pl-note';n.textContent=`Saved ${items.length} lot${items.length===1?'':'s'} as wanted-${id}.xml. On BrickLink: Want > Upload, then pick the file.${skipped?` ${skipped} lot${skipped>1?'s have':' has'} no BrickLink color and ${skipped>1?'were':'was'} left out.`:''}${M.src==='rb'?' Part numbers come from Rebrickable; a few may differ on BrickLink.':''}`;
+  const n=document.createElement('div');n.className='pl-note';n.textContent=`Saved ${items.length} lot${items.length===1?'':'s'} as wanted-${id}.xml. On BrickLink: Want > Upload, then pick the file.${skipped?` ${skipped} lot${skipped>1?'s have':' has'} no BrickLink number or color and ${skipped>1?'were':'was'} left out.`:''}${M.src==='rb'?' Part numbers come from Rebrickable; a few may differ on BrickLink.':''}`;
   const f=document.querySelector(`.pl[data-id="${CSS.escape(kind+':'+id)}"] .pl-foot`);if(f){const old=f.querySelector('.pl-note');if(old)old.remove();f.appendChild(n);}
   return xml;
 }
 
 // ---------- export / import (one CSV column, compact JSON) ----------
-function exportField(kind,id){const r=rec(kind,id);if(!r)return '';const o={b:r.b};if(Object.keys(r.h).length)o.h=r.h;if(r.sa&&Object.keys(r.sa).length)o.sa=r.sa;if(r.src)o.src=r.src;if(r.s)o.s=r.s;return JSON.stringify(o);}
+function exportField(kind,id){const r=rec(kind,id);if(!r)return '';const o={b:r.b};if(Object.keys(r.h).length)o.h=r.h;if(r.sa&&Object.keys(r.sa).length)o.sa=r.sa;if(r.src)o.src=r.src;o.ps=r.ps?1:0;if(r.fb)o.fb=1;if(r.s)o.s=r.s;return JSON.stringify(o);}
 function importField(kind,id,txt){if(rec(kind,id))return false;let o;try{o=JSON.parse(txt);}catch(e){return false;}if(!o||typeof o!=='object')return false;
-  const clean={b:o.b?1:0,h:{},sa:{},t:Date.now()};for(const k in (o.h||{})){const n=parseInt(o.h[k],10);if(n>=0&&k.length<80)clean.h[k]=n;}for(const k in (o.sa||{}))if(k.length<80)clean.sa[k]=1;
-  if(o.src==='bl'||o.src==='rb')clean.src=o.src;if(o.s&&typeof o.s==='object'){const s={};for(const f of ['m','l','k','n','L'])s[f]=Math.max(0,parseInt(o.s[f],10)||0);clean.s=s;}
+  const clean={b:o.b?1:0,h:{},sa:{},t:Date.now(),v2:1};for(const k in (o.h||{})){const n=parseInt(o.h[k],10);if(n>=0&&k.length<80)clean.h[k]=n;}for(const k in (o.sa||{}))if(k.length<80)clean.sa[k]=1;
+  if(o.src==='bl'||o.src==='rb')clean.src=o.src;clean.ps=o.ps||!('ps' in o)?1:0;if(o.fb||(!('ps' in o)&&o.b))clean.fb=1;if(!clean.ps)delete clean.ps;if(o.s&&typeof o.s==='object'){const s={};for(const f of ['m','l','k','n','L','F','f'])s[f]=Math.max(0,parseInt(o.s[f],10)||0);clean.s=s;}
   bag(kind)[id]=clean;save();return true;}
 function clear(kind,id){delete bag(kind)[id];save();}
 
@@ -305,6 +336,6 @@ const css=document.createElement('style');css.textContent=`
 @media (max-width:520px){.pl-r{grid-template-columns:28px 52px minmax(0,1fr);grid-template-areas:'ck im t' 'ck im q';padding:6px 6px 6px 6px}.pl-im{width:52px;height:52px}.pl-im img{max-width:48px;max-height:48px}.pl-q{justify-self:end}.pl-q.one{display:none}.pl-x1{display:inline}.pl-q button{width:34px;height:32px}}
 `;document.head.appendChild(css);
 
-window.StudParts={mount,clearBrickLinkCopies:blClearLocal,summary,missingText,exportField,importField,clear,build,wanted:(kind,id)=>{const D=MEM.get(kind+':'+id);return D?wanted(kind,id,build(D),''):null;},
+window.StudParts={loose:LOOSE,mount,figsOwned,started:(kind,id,cond)=>started_(rec(kind,id),cond),clearBrickLinkCopies:blClearLocal,summary,missingText,exportField,importField,clear,build,wanted:(kind,id)=>{const D=MEM.get(kind+':'+id);return D?wanted(kind,id,build(D),''):null;},
   _state:()=>JSON.parse(JSON.stringify(ST)),_flush:flush};
 })();

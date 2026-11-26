@@ -349,7 +349,7 @@ function figThemeOf(fid,bl){
 function figKeyFor(fid){
   const bl=blOf(fid),own=exFigs(),ids=Object.keys(own);
   if(own[fid])return fid;if(bl&&own[bl])return bl;
-  try{if(typeof figsFromSets==='function'&&figsFromSets(owned)[fid])return fid;}catch(e){}
+  try{if(typeof SETFIGS!=='undefined'&&typeof owned!=='undefined'&&owned&&Object.keys(owned).some(k=>(SETFIGS[k]||[]).some(x=>x[0]===fid)))return fid;}catch(e){} // a set fig: same id as the set's, so it merges
   if(EDITS.figs[fid])return fid;if(bl&&EDITS.figs[bl])return bl;
   const blStyle=ids.length&&ids.filter(i=>!/^fig-/i.test(i)).length>ids.length/2;
   return blStyle&&bl?bl:fid;
@@ -586,33 +586,44 @@ function enhance(bg){
 function figInfo(id){
   let inset={};try{inset=typeof figsFromSets==='function'?figsFromSets(owned):{};}catch(e){}
   const loose=curQty('fig',id),s=inset[id],from=[];
-  if(s&&typeof SETFIGS!=='undefined')for(const k of s.from||[]){const l=SETFIGS[k]||[],e=l.find(x=>x[0]===id);if(!e)continue;
-    const miss=(MISS.sets[k]&&MISS.sets[k].figs&&MISS.sets[k].figs[id])|0;const q=Math.max(0,e[1]*(owned[k]||0)-miss);if(q)from.push({k,q});}
+  if(s)for(const k of s.from||[]){const q=s.per?(s.per[k]|0):0;if(q||!s.per)from.push({k,q:q||1});}
   const ins=s?s.qty:0;return {loose,ins,total:loose+ins,from};
 }
 function inSetsCount(id){return figInfo(id).ins;}
 const figTotal=id=>figInfo(id).total;
 
-// ---------- missing parts: the Parts checklist (parts.js) plus which minifigs a set is missing ----------
+// ---------- missing parts: the Parts checklist (parts.js) ----------
 // The old count + note (before the checklist) are still read and shown until cleared.
-// localStorage 'studMissing' {sets:{num:{n,note,figs:{figId:count},t}}, figs:{id:{n,note,t}}}. Kept across uploads and edits.
-// Minifigs marked missing from a set are taken out of that set's figs (figsFromSets), so they don't count as owned.
+// localStorage 'studMissing' {sets:{num:{n,note,t}}, figs:{id:{n,note,t}}}. Kept across uploads and edits.
+// A set's minifigs are lines in its Parts checklist. They count as owned (Figs tab, "from sets") ONLY when ticked there
+// (figsFromSets below). The old "Minifigs missing from this set" checkboxes (ticked = missing) are gone: people ticked
+// them to mean "I have it", which took the fig away. Old records of that kind are dropped once, below.
 function missRec(kind,id){return (kind==='set'?MISS.sets:MISS.figs)[id]||null;}
 const PARTS=()=>window.StudParts||null;
 function partsMiss(kind,id){const P=PARTS();if(!P)return '';try{return P.missingText(kind,id);}catch(e){return '';}}
-function hasMiss(kind,id){if(partsMiss(kind,id))return true;const m=missRec(kind,id);if(!m)return false;return (m.n>0)||!!(m.note&&m.note.trim())||Object.values(m.figs||{}).some(v=>v>0);}
-function missFigCount(m){return Object.values((m&&m.figs)||{}).reduce((a,v)=>a+(v|0),0);}
+function hasMiss(kind,id){if(partsMiss(kind,id))return true;const m=missRec(kind,id);if(!m)return false;return (m.n>0)||!!(m.note&&m.note.trim());}
 function setMiss(kind,id,m){const M=kind==='set'?MISS.sets:MISS.figs;
   const clean={n:Math.max(0,Math.min(99999,m.n|0)),note:String(m.note||'').slice(0,500),t:Date.now()};
-  if(kind==='set'){clean.figs={};for(const f in (m.figs||{}))if((m.figs[f]|0)>0)clean.figs[f]=m.figs[f]|0;}
   M[id]=clean;if(!hasMiss(kind,id))delete M[id];saveMiss();}
-function missSummary(kind,id){const m=missRec(kind,id)||{};const b=[];const pm=partsMiss(kind,id);if(pm)b.push(pm);else if(m.n>0)b.push(m.n+' piece'+(m.n>1?'s':''));const fc=missFigCount(m);if(fc)b.push(fc+' minifig'+(fc>1?'s':''));if(m.note&&m.note.trim()&&!b.length)b.push('see note');return b.join(', ');}
+function missSummary(kind,id){const m=missRec(kind,id)||{};const b=[];const pm=partsMiss(kind,id);if(pm)b.push(pm);else if(m.n>0)b.push(m.n+' piece'+(m.n>1?'s':''));if(m.note&&m.note.trim()&&!b.length)b.push('see note');return b.join(', ');}
+(()=>{let ch=false;for(const k in MISS.sets){const m=MISS.sets[k];if(m&&m.figs){delete m.figs;ch=true;if(!hasMiss('set',k))delete MISS.sets[k];}}if(ch)saveMiss();})();
+// Only minifigs ticked in a set's Parts checklist count as owned "from sets" (per set: f.per[setNum] = count).
 if(typeof figsFromSets==='function'){const _ffs=figsFromSets;figsFromSets=function(o){const out=_ffs.apply(this,arguments);
-  try{if(isDemo()||!o||typeof SETFIGS==='undefined')return out;
-    for(const k in MISS.sets){const m=MISS.sets[k];if(!m||!m.figs||!o[k])continue;const list=SETFIGS[k]||[];
-      for(const fid in m.figs){const f=out[fid],e=list.find(x=>x[0]===fid);if(!f||!e)continue;const per=e[1]*o[k],sub=Math.min(m.figs[fid]|0,per);if(!sub)continue;
-        f.qty-=sub;if(sub>=per)f.from=f.from.filter(x=>x!==k);if(f.qty<=0)delete out[fid];}}}catch(e){console.error('colledit missing figs',e);}
+  try{const P=PARTS();if(isDemo()||!o||typeof SETFIGS==='undefined'||!P)return out;
+    const cache={},own=k=>cache[k]||(cache[k]=P.figsOwned(k,curCond('set',k)));
+    for(const fid in out){const f=out[fid];let q=0;const from=[],per={};
+      for(const k of f.from||[]){const h=own(k)[fid]|0;if(h>0){q+=h;from.push(k);per[k]=h;}}
+      if(q>0){f.qty=q;f.from=from;f.per=per;}else delete out[fid];}}catch(e){console.error('colledit set figs',e);}
   return out;};}
+// one more loose copy of a minifig (fig popup and the set checklist's minifig lines)
+function looseKey(fid){if(exFigs()[fid]||EDITS.figs[fid])return fid;const bl=/^fig-/i.test(fid)?blOf(fid):null;if(bl&&(exFigs()[bl]||EDITS.figs[bl]))return bl;return /^fig-/i.test(fid)?figKeyFor(fid):fid;}
+function markLoose(fid){const k=looseKey(fid),f=/^fig-/i.test(fid)?fid:((typeof figIds==='function'&&figIds(fid).fig)||fid);
+  setEdit('fig',k,curQty('fig',k)+1,curCond('fig',k)||'',{name:figLabel(k),theme:figThemeOf(f,/^fig-/i.test(k)?blOf(k):k)});}
+if(PARTS()&&PARTS().loose&&!isDemo()){PARTS().loose.count=fid=>curQty('fig',looseKey(fid));PARTS().loose.add=fid=>{markLoose(fid);figRefresh();};}
+// owned sets that include this minifig but where it isn't ticked (fully) yet
+function figUnticked(fid){const out=[];if(typeof SETFIGS==='undefined'||typeof owned==='undefined'||!owned||!PARTS())return out;
+  for(const k in owned){const l=SETFIGS[k];if(!l||!owned[k])continue;const e=l.find(x=>x[0]===fid);if(!e)continue;const need=e[1]*Math.max(1,owned[k]|0);
+    const h=PARTS().figsOwned(k,curCond('set',k))[fid]|0;if(h<need)out.push({k,need,h});}return out;}
 
 // ---------- editor inside the set / fig popup ----------
 function stepHTML(v){return `<div class="ce-step"><button type="button" data-s="-1" aria-label="One less">−</button><output>${v}</output><button type="button" data-s="1" aria-label="One more">+</button></div>`;}
@@ -622,46 +633,44 @@ function paintEditor(box,info,msg,keep){
   const now=isSet?curQty('set',id):fi.total;
   const k=keep||{};
   let qty=k.qty!=null?k.qty:(isSet?(now||1):(loose||(ins?0:1))),cond=k.cond||curCond(kind,id)||DEF[kind],armed=false;
-  const m0=missRec(kind,id)||{};let mn=k.mn!=null?k.mn:(m0.n|0),mnote=k.mnote!=null?k.mnote:(m0.note||''),mfigs=k.mfigs||Object.assign({},m0.figs||{});
+  const m0=missRec(kind,id)||{};let mn=k.mn!=null?k.mn:(m0.n|0),mnote=k.mnote!=null?k.mnote:(m0.note||'');
   let mopen=k.mopen!=null?k.mopen:(hasMiss(kind,id)||/incomplete/i.test(cond));
   const minQ=isSet?1:(ins?0:1);
-  const setFigs=isSet&&typeof SETFIGS!=='undefined'?(SETFIGS[id]||[]):[];
+  const unt=isSet?[]:figUnticked(id);
   const draw=m=>{
     const owns=now>0;
     const fromH=!isSet&&fi.from.length?`<div class="ce-from"><b>${ins} from your sets:</b> ${fi.from.map(x=>`<button type="button" class="ce-link" data-open="${H(x.k)}">${H(sn(x.k))} ${H(SETS[x.k]?SETS[x.k][0]:'')}${x.q>1?' ×'+x.q:''}</button>`).join(', ')}</div>`:'';
     const ownLine=isSet?'':`<div class="ce-own-line">You own <b>×${now}</b>${ins||loose?`: ${ins} from sets, ${loose} loose`:''}</div>`;
     const missH=owns?`<details class="ce-miss"${mopen?' open':''}><summary>Parts and missing pieces${hasMiss(kind,id)?` <span class="ce-badge ms">${H(missSummary(kind,id))}</span>`:''}</summary>
-<div class="ce-lbl">Parts</div><div data-pl></div>
+<div class="ce-lbl">${isSet&&typeof SETFIGS!=='undefined'&&(SETFIGS[id]||[]).length?'Minifigs and parts':'Parts'}</div><div data-pl></div>
 ${(mn>0||mnote.trim())?`<div class="ce-legacy">Earlier entry: ${mn>0?H(mn)+' missing piece'+(mn>1?'s':''):''}${mn>0&&mnote.trim()?' · ':''}${mnote.trim()?'“'+H(mnote.trim())+'”':''} <button type="button" class="ce-ghost" data-clrold="1">Clear</button></div>`:''}
-${setFigs.length?`<div class="ce-lbl">Minifigs missing from this set</div><div class="ce-mfigs">${setFigs.map(([fid,fq0])=>{const per=fq0*(curQty('set',id)||1),v=Math.min(mfigs[fid]|0,per);const nm=typeof figName==='function'?figName(fid):figLabel(fid);
-  return `<label class="ce-mfig"><input type="checkbox" data-f="${H(fid)}"${v?' checked':''}><img alt="" loading="lazy" src="${fImg(fid)}" onerror="this.style.visibility='hidden'"><span>${H(nm)}<small>${H(fid)}${per>1?` · ${v||0} of ${per} missing`:''}</small></span>${per>1?`<select data-fc="${H(fid)}" aria-label="How many missing">${Array.from({length:per+1},(_,i)=>`<option value="${i}"${i===v?' selected':''}>${i}</option>`).join('')}</select>`:''}</label>`;}).join('')}</div><div class="muted small">Missing minifigs don't count as owned.</div>`:''}
 </details>`:'';
     box.innerHTML=`<div class="ce-eh">${isSet?ICON_BRICK:ICON_FIG}<span>${owns?'In my collection':'Not in my collection yet'}</span>${st==='added'?'<span class="ce-badge">Added in app</span>':st==='edited'?'<span class="ce-badge ed">Edited in app</span>':''}</div>
 ${ownLine}${fromH}
+${unt.length?`<div class="ce-from ce-unt"><b>In your sets, not ticked as owned yet:</b> ${unt.map(x=>`<button type="button" class="ce-link" data-open="${H(x.k)}">${H(sn(x.k))} ${H(SETS[x.k]?SETS[x.k][0]:'')}${x.need>1?` (${x.h} of ${x.need})`:''}</button>`).join(', ')}<div class="muted small">Tick it in that set's Parts checklist, or mark it as owned (loose) below.</div></div>`:''}
 <div class="ce-lbl">${isSet?'Quantity':'Loose copies'}</div>${stepHTML(qty)}
-${!isSet&&ins?`<div class="muted small" style="margin-top:4px">Loose copies are the ones not in a set. The ${ins} from sets always stay; change those from the set.</div>`:''}
+${!isSet&&ins?`<div class="muted small" style="margin-top:4px">Loose copies are the ones not in a set. The ${ins} from sets come from the minifigs you ticked in those sets' Parts checklists; change those there.</div>`:''}
 <div class="ce-lbl">Condition${!isSet&&ins?' (loose copies)':''}</div><div class="ce-conds">${(isSet?SET_CONDS:FIG_CONDS).map(c=>`<button type="button" data-c="${H(c)}" aria-pressed="${c===cond}">${H(c)}</button>`).join('')}</div>
 ${missH}
-<div class="ce-go">${owns?`<button type="button" data-save="1">Save changes</button>${(isSet||loose>0)?`<button type="button" class="ce-danger" data-rm="1">${armed?'Tap again to remove':(!isSet&&ins?'Remove loose copies':'Remove')}</button>`:''}`:`<button type="button" class="ce-add" data-save="1">${isSet?ICON_BRICK:ICON_FIG}Add to my ${isSet?'sets':'minifigs'}</button>`}
+<div class="ce-go">${owns?`<button type="button" data-save="1">Save changes</button>${(isSet||loose>0)?`<button type="button" class="ce-danger" data-rm="1">${armed?'Tap again to remove':(!isSet&&ins?'Remove loose copies':'Remove')}</button>`:''}${!isSet&&loose===0?`<button type="button" class="ce-add" data-own1="1">${ICON_FIG}Mark as owned (loose)</button>`:''}`:`<button type="button" class="ce-add" data-save="1">${isSet?ICON_BRICK:ICON_FIG}${isSet?'Add to my sets':'Mark as owned (loose)'}</button>`}
 ${r?`<button type="button" class="ce-ghost" data-undo="1">Undo app edits${fq?` (file: ×${fq})`:''}</button>`:''}</div>
 <div class="ce-msg" role="status">${m?H(m):''}</div>`;
     const slot=box.querySelector('[data-pl]');
     if(slot&&PARTS()){if(box._pl&&box._pl.dataset.id===kind+':'+id){slot.replaceWith(box._pl);if(box._pl.refreshCond)box._pl.refreshCond();}
-      else{const det=box.querySelector('.ce-miss');const go=()=>{if(!slot.isConnected)return;box._pl=PARTS().mount(slot,kind,id,()=>cond,()=>{const sm=box.querySelector('.ce-miss>summary');if(sm){const b=sm.querySelector('.ce-badge');const t=hasMiss(kind,id)?missSummary(kind,id):'';if(b){if(t)b.textContent=t;else b.remove();}else if(t)sm.insertAdjacentHTML('beforeend',` <span class="ce-badge ms">${H(t)}</span>`);}try{decorate();}catch(e){}});};
+      else{const det=box.querySelector('.ce-miss');const go=()=>{if(!slot.isConnected)return;box._pl=PARTS().mount(slot,kind,id,()=>cond,(ev)=>{if(ev&&ev.figs)figRefresh();const sm=box.querySelector('.ce-miss>summary');if(sm){const b=sm.querySelector('.ce-badge');const t=hasMiss(kind,id)?missSummary(kind,id):'';if(b){if(t)b.textContent=t;else b.remove();}else if(t)sm.insertAdjacentHTML('beforeend',` <span class="ce-badge ms">${H(t)}</span>`);}try{decorate();}catch(e){}});};
         if(!det||det.open)go();else det.addEventListener('toggle',function t(){if(det.open){det.removeEventListener('toggle',t);go();}});}}
     else if(slot)slot.outerHTML='<p class="muted small">Parts lists are not available right now.</p>';
     const grab=()=>{const d=box.querySelector('.ce-miss');if(d)mopen=d.open;};
     box.querySelectorAll('[data-s]').forEach(x=>x.onclick=()=>{grab();qty=Math.max(minQ,Math.min(999,qty+(+x.dataset.s)));armed=false;draw();});
-    const co=box.querySelector('[data-clrold]');if(co)co.onclick=()=>{grab();mn=0;mnote='';setMiss(kind,id,{n:0,note:'',figs:mfigs});draw();try{decorate();}catch(e){}};
+    const co=box.querySelector('[data-clrold]');if(co)co.onclick=()=>{grab();mn=0;mnote='';setMiss(kind,id,{n:0,note:''});draw();try{decorate();}catch(e){}};
     box.querySelectorAll('.ce-conds button').forEach(x=>x.onclick=()=>{grab();cond=x.dataset.c;if(/incomplete/i.test(cond))mopen=true;armed=false;draw();});
-    box.querySelectorAll('.ce-mfigs input[type=checkbox]').forEach(x=>x.onchange=()=>{grab();const f=x.dataset.f,sel=box.querySelector(`select[data-fc="${CSS.escape(f)}"]`);mfigs[f]=x.checked?(sel?Math.max(1,+sel.value||1):1):0;draw();});
-    box.querySelectorAll('.ce-mfigs select').forEach(x=>{x.onclick=e=>e.stopPropagation();x.onchange=()=>{grab();mfigs[x.dataset.fc]=+x.value;draw();};});
+    const o1=box.querySelector('[data-own1]');if(o1)o1.onclick=()=>{grab();markLoose(id);afterChange(box,info,'Marked as owned (loose ×1).');};
     box.querySelectorAll('[data-open]').forEach(x=>x.onclick=()=>{const k2=x.dataset.open;closePopup();setTimeout(()=>openSet(k2),350);});
     const d=box.querySelector('.ce-miss');if(d)d.addEventListener('toggle',()=>{mopen=d.open;});
     const sv_=box.querySelector('[data-save]');if(sv_)sv_.onclick=()=>{grab();
       const fid=isSet?null:(/^fig-/i.test(id)?id:((typeof figIds==='function'&&figIds(id).fig)||id));
       const infoF=isSet?null:{name:figLabel(id),theme:figThemeOf(fid,/^fig-/i.test(id)?blOf(id):id)};
-      if(owns)setMiss(kind,id,{n:mn,note:mnote,figs:mfigs});
+      if(owns)setMiss(kind,id,{n:mn,note:mnote});
       const prevLoose=loose,prevQ=isSet?now:loose;
       if(qty!==prevQ||cond!==(curCond(kind,id)||DEF[kind])||!owns)setEdit(kind,id,qty,cond,infoF);else refresh();
       afterChange(box,info,owns?(isSet||qty>=prevLoose?'Saved.':'Saved. Loose copies now ×'+qty+'.'):'Added to your collection.');};
@@ -681,6 +690,8 @@ function afterChange(box,info,msg){
     if(own){if(txt)own.textContent=txt;else own.remove();}else if(txt){const s=document.createElement('span');s.textContent=txt;meta.appendChild(s);}}}
   paintEditor(box,info,msg);
 }
+// a minifig ticked or unticked in a set's checklist: recount the Figs tab and scores (debounced; the popup stays open)
+let figRT=0;function figRefresh(){clearTimeout(figRT);figRT=setTimeout(()=>{try{render(owned);}catch(e){console.error('colledit figRefresh',e);}},300);}
 function closePopup(){const bg=document.getElementById('setmodal');if(!bg)return;const x=bg.querySelector('.mclose');if(x)x.click();else bg.remove();}
 try{new MutationObserver(ms=>{for(const m of ms)for(const n of m.addedNodes){if(n.nodeType!==1)continue;const bg=n.id==='setmodal'?n:(n.querySelector&&n.querySelector('#setmodal'));
   if(bg)requestAnimationFrame(()=>requestAnimationFrame(()=>enhance(bg)));}}).observe(document.body,{childList:true});}catch(e){}
@@ -702,7 +713,9 @@ function exportCSV(){
   const lines=['Item Type,Item No,Item Name,Quantity,Condition,Missing Parts,Missing Notes,Missing Minifigs,Parts Checklist'];
   const mc=(kind,id)=>{const m=missRec(kind,id)||{},P=PARTS();let pm=null;try{pm=P?P.summary(kind,id,curCond(kind,id)):null;}catch(e){}
     const n=pm&&(pm.state==='missing'||pm.state==='complete')&&pm.n!=null?pm.m:(m.n||'');
-    return [n===0?'0':n,m.note||'',Object.entries(m.figs||{}).filter(e=>e[1]>0).map(e=>e[0]+' x'+e[1]).join('; '),P?P.exportField(kind,id):''];};
+    let mf='';try{if(kind==='set'&&P&&P.started('set',id,curCond('set',id))&&typeof SETFIGS!=='undefined'){const h=P.figsOwned(id,curCond('set',id)),n0=Math.max(1,own[id]|0);
+      mf=(SETFIGS[id]||[]).map(([f,q])=>[f,q*n0-(h[f]|0)]).filter(e=>e[1]>0).map(e=>e[0]+' x'+e[1]).join('; ');}}catch(e){}
+    return [n===0?'0':n,m.note||'',mf,P?P.exportField(kind,id):''];};
   const own=(typeof owned!=='undefined'&&owned)||{};
   Object.keys(own).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})).forEach(k=>lines.push(['Set',k,SETS[k]?SETS[k][0]:'',own[k],curCond('set',k)||'',...mc('set',k)].map(q).join(',')));
   const F=exFigs();Object.keys(F).sort().forEach(id=>lines.push(['Minifig',id,F[id].name||figLabel(id),F[id].qty,curCond('fig',id)||'',...mc('fig',id)].map(q).join(',')));
@@ -722,9 +735,8 @@ function importMissing(text){
     if(type==='set'&&typeof SETS!=='undefined'&&!SETS[id]&&SETS[id+'-1'])id+='-1';
     let fromList=false;if(iC>=0&&r[iC]&&PARTS()){try{if(PARTS().importField(type,id,String(r[iC])))n++;fromList=true;}catch(e){}}
     if(missRec(type,id))continue;
-    const figs={};String(iF>=0?r[iF]||'':'').split(';').forEach(x=>{const m=/^\s*(\S+)\s+x(\d+)\s*$/.exec(x);if(m)figs[m[1]]=+m[2];});
-    const rec_={n:fromList?0:(parseInt(r[iP])||0),note:iO>=0?String(r[iO]||''):'',figs};
-    if(rec_.n||rec_.note.trim()||Object.keys(figs).length){setMiss(type,id,rec_);n++;}}
+    const rec_={n:fromList?0:(parseInt(r[iP])||0),note:iO>=0?String(r[iO]||''):''}; // Missing Minifigs is informational now: the checklist column carries the ticks
+    if(rec_.n||rec_.note.trim()){setMiss(type,id,rec_);n++;}}
   if(n)render(owned);
 }
 
