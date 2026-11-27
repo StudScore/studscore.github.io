@@ -1,0 +1,65 @@
+# Copy this file to .github/workflows/community.yml in the StudScore/studscore.github.io repo once the
+# community Worker is deployed. Add Actions secrets COMMUNITY_ENDPOINT and COMMUNITY_EXPORT_TOKEN.
+# Optional: COMMUNITY_SEED_CSV (the CSV text of the store's SOLD prices). It is written to the runner's temp
+# folder for the build and is never saved in the repo. Only the aggregated community.json is committed.
+
+name: Update community prices
+
+on:
+  schedule:
+    # 11:43 UTC daily, after the Brick Owl job.
+    - cron: "43 11 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  community:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Write optional store seed outside the repo
+        env:
+          COMMUNITY_SEED_CSV: ${{ secrets.COMMUNITY_SEED_CSV }}
+        run: |
+          if [ -n "${COMMUNITY_SEED_CSV:-}" ]; then
+            printf '%s\n' "$COMMUNITY_SEED_CSV" > "$RUNNER_TEMP/community_seed.csv"
+            echo "COMMUNITY_SEED_PATH=$RUNNER_TEMP/community_seed.csv" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build community.json
+        env:
+          COMMUNITY_ENDPOINT: ${{ secrets.COMMUNITY_ENDPOINT }}
+          COMMUNITY_EXPORT_TOKEN: ${{ secrets.COMMUNITY_EXPORT_TOKEN }}
+          COMMUNITY_CURRENCY: USD
+        run: python pipeline/build_community.py --output community.json
+
+      - name: Remove the seed file
+        if: always()
+        run: rm -f "$RUNNER_TEMP/community_seed.csv"
+
+      - name: Commit community.json if it changed
+        run: |
+          set -euo pipefail
+          if [ ! -f community.json ]; then
+            echo "No community.json was written (secrets not set yet). Nothing to commit."
+            exit 0
+          fi
+          python -c "import json;d=json.load(open('community.json'));assert d['source']=='StudScore community' and isinstance(d['items'],dict)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add community.json
+          if git diff --staged --quiet; then
+            echo "community.json is unchanged."
+          else
+            git commit -m "chore: update community prices"
+            git push
+          fi
