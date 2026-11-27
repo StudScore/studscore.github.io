@@ -14,6 +14,11 @@
 //   No record yet: Sealed and New count as all ticked, anything else as "not checked yet" (no Missing badge).
 //   ps:1 once a PART line, Check all or Uncheck all is touched ("parts checklist started"): only then do unticked parts and
 //   minifigs count as missing. Ticking minifigs alone does not start it.
+// Sticker sheets are EXTRAS (phase 5): a built set has its stickers on the parts, so a sheet line never counts as missing,
+//   never blocks Complete and never adds to the Missing count, badge or Wanted List. It sits in an "Extras" group, still
+//   tickable ("I still have the sheet"). BrickLink stickered parts stay paired with their plain part and count as that part.
+// COMPLETE (phase 5): isComplete() = checklist started by hand (ps), parts list loaded, every part ticked and every minifig
+//   ticked. Untouched lists (even Sealed/New, which only show ticked by default) get no stamp until checked.
 // Minifigs of a set are lines too ("fig|fig-001234", from SETFIGS, need = per copy × sets owned). A set's minifig counts as
 //   owned on the Figs tab ONLY when it is ticked here (or the set is Sealed/New with an untouched list, where everything
 //   shows ticked). colledit.js reads figsOwned() for that. Loose minifigs are never affected.
@@ -157,10 +162,10 @@ function migrate(r,M){
   r.src=M.src;
 }
 function tally(M,r,cond){
-  let n=0,L=0,m=0,l=0,k=0,F=0,f=0;
+  let n=0,L=0,m=0,l=0,k=0,F=0,f=0,fo=0;
   const fm=!!(r&&r.ps&&!r.fq); // unticked minifigs only count as missing once the parts checklist is started by hand
-  for(const o of M.lines){const h=have(r,o,cond);if(o.fig){F+=o.q;if(fm&&h<o.q)f+=o.q-h;continue;}if(o.sheet){if(h<o.q)k+=o.q-h;continue;}n+=o.q;L++;if(h<o.q){m+=o.q-h;l++;}}
-  return {n,L,m,l,k,F,f};
+  for(const o of M.lines){const h=have(r,o,cond);if(o.fig){F+=o.q;fo+=h;if(fm&&h<o.q)f+=o.q-h;continue;}if(o.sheet){if(h<o.q)k+=o.q-h;continue;}n+=o.q;L++;if(h<o.q){m+=o.q-h;l++;}}
+  return {n,L,m,l,k,F,f,fo}; // k = sticker sheets not ticked: extras, never missing
 }
 const started_=(r,cond)=>!!(r&&r.ps)||(newCond(cond)&&(!r||!!r.b));
 // minifigs of a set that count as owned: {figId: count}. Untouched used set: none.
@@ -175,26 +180,32 @@ function summary(kind,id,cond){
   if(!r)return newCond(cond)?{state:'complete'}:{state:'none'};
   if(!r.ps)return newCond(cond)&&r.b?{state:'complete'}:{state:'none'}; // only minifigs ticked so far
   const s=r.s;if(!s)return {state:r.b?'complete':'started',m:0,l:0,k:0,f:0};
-  return {state:(s.m||s.k||s.f)?'missing':'complete',m:s.m,l:s.l,k:s.k,f:s.f|0,n:s.n,L:s.L};
+  return {state:(s.m||s.f)?'missing':'complete',m:s.m,l:s.l,k:s.k,f:s.f|0,n:s.n,L:s.L};
 }
+// COMPLETE stamp: started by hand, list loaded, every part and every minifig ticked (sticker sheets are extras)
+function isComplete(kind,id){const r=rec(kind,id),s=r&&r.s;if(!r||!r.ps||!s||!(s.n>0||s.F>0))return false;
+  const fo=s.fo!=null?s.fo:(r.fq?(r.fb?s.F:-1):s.F-(s.f|0));return !s.m&&!s.f&&fo>=(s.F|0);}
 function missingText(kind,id){const s=summary(kind,id);if(s.state!=='missing')return '';
-  const b=[];if(s.m)b.push(`${s.m} part${s.m>1?'s':''} in ${s.l} lot${s.l>1?'s':''}`);if(s.f)b.push(`${s.f} minifig${s.f>1?'s':''}`);if(s.k)b.push(s.k>1?`${s.k} sticker sheets`:'sticker sheet');return b.join(', ');}
+  const b=[];if(s.m)b.push(`${s.m} part${s.m>1?'s':''} in ${s.l} lot${s.l>1?'s':''}`);if(s.f)b.push(`${s.f} minifig${s.f>1?'s':''}`);return b.join(', ');}
 
 // ---------- rendering ----------
 function swatch(c){return `<i class="pl-sw" style="background:#${H(c.rgb)}"></i>`;}
 // colledit.js plugs in loose-fig ownership: LOOSE.count(figId) -> loose copies, LOOSE.add(figId) marks one more as owned (loose)
 const LOOSE={count:null,add:null};
+// COMPLETE stamp icon: a green 2x2 brick with a check (original SVG); Save icon: brick with a down arrow
+const STAMP='<svg class="pl-stic" viewBox="0 0 24 22" aria-hidden="true"><rect x="4" y="1" width="6" height="4" rx="1" fill="#4B9F4A" stroke="#05131D" stroke-width="1.3"/><rect x="14" y="1" width="6" height="4" rx="1" fill="#4B9F4A" stroke="#05131D" stroke-width="1.3"/><rect x="1.5" y="4.5" width="21" height="16" rx="2" fill="#4B9F4A" stroke="#05131D" stroke-width="1.6"/><path d="M7 12.5l3.4 3.4L17.5 8.8" fill="none" stroke="#F2F3F2" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const SAVE_IC='<svg class="pl-stic" viewBox="0 0 24 22" aria-hidden="true"><rect x="4" y="1" width="6" height="4" rx="1" fill="#F2CD37" stroke="#05131D" stroke-width="1.3"/><rect x="14" y="1" width="6" height="4" rx="1" fill="#F2CD37" stroke="#05131D" stroke-width="1.3"/><rect x="1.5" y="4.5" width="21" height="16" rx="2" fill="#F2CD37" stroke="#05131D" stroke-width="1.6"/><path d="M12 8v7.5M8.5 12.5L12 16l3.5-3.5" fill="none" stroke="#05131D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 function rowHTML(o,h,sa){
   const full=h>=o.q,part=h>0&&!full,need=o.q;
   const img=`<span class="pl-im${o.st?' pl-pair':''}"><img alt="" loading="lazy" decoding="async" src="${H(o.img)}" onerror="this.onerror=null;${o.big?`this.src='${H(o.big)}'`:`this.style.visibility='hidden'`}">${o.st?`<img class="pl-stk" alt="" loading="lazy" decoding="async" src="${H(o.st.img)}" onerror="this.onerror=null;this.src='${H(o.st.big)}'"><b class="pl-stl">Sticker</b>`:''}${o.sheet?'<b class="pl-stl">Sheet</b>':''}</span>`;
-  const sub=o.fig?`Minifig · ${H(o.no)}${need===1?'<span class="pl-x1"> · ×1</span>':''}`:o.sheet?`Sticker sheet · ${H(o.no)}${o.uses?` · also for: ${H(o.uses.slice(0,3).join('; '))}${o.uses.length>3?'…':''}`:''} · not counted in pieces`
+  const sub=o.fig?`Minifig · ${H(o.no)}${need===1?'<span class="pl-x1"> · ×1</span>':''}`:o.sheet?`Sticker sheet · ${H(o.no)}${o.uses?` · also for: ${H(o.uses.slice(0,3).join('; '))}${o.uses.length>3?'…':''}`:''} · extra, not counted`
     :`${swatch(o.col)}${H(o.col.n)} · ${H(o.no)}${need===1?'<span class="pl-x1"> · ×1</span>':''}`;
   const lq=o.fig&&LOOSE.count?(LOOSE.count(o.no)|0):-1;
   const stk=o.fig&&lq>=0?`<button type="button" class="pl-sa pl-loose" data-loose aria-pressed="${lq>0?'true':'false'}">${lq>0?`Owned loose ×${lq} · add one`:'Mark as owned (loose)'}</button>`:o.st?`<span class="pl-sti">With sticker: ${H(o.st.name)} <span class="pl-stno">(${H(o.st.no)})</span></span><button type="button" class="pl-sa" data-sa aria-pressed="${sa?'true':'false'}">${sa?'Sticker applied':'Sticker not applied'}</button>`:'';
   const qty=need>1?`<div class="pl-q"><button type="button" data-d="-1" aria-label="One less">−</button><output class="${full?'ok':part?'pt':''}">${h}/${need}</output><button type="button" data-d="1" aria-label="One more">+</button></div>`:`<div class="pl-q one"><output class="${full?'ok':''}">${full?1:0}/1</output></div>`;
   return `<div class="pl-r${full?' done':part?' part':''}${o.sheet?' sheet':''}${o.fig?' fig':''}" data-k="${H(o.k)}"><button type="button" class="pl-ck" role="checkbox" aria-checked="${full?'true':part?'mixed':'false'}" aria-label="Have ${H(o.name)}${o.st?' with sticker':''}"></button>${img}<div class="pl-t"><b>${H(o.name)}</b><small>${sub}</small>${stk}</div>${qty}</div>`;
 }
-function mount(slot,kind,id,getCond,onChange){
+function mount(slot,kind,id,getCond,onChange,opts){opts=opts||{};
   const el=document.createElement('div');el.className='pl';el.dataset.id=kind+':'+id;
   el.innerHTML=`<div class="pl-load"><span class="pl-spin"></span>Loading parts list…</div>`;
   slot.replaceWith(el);
@@ -208,22 +219,23 @@ function mount(slot,kind,id,getCond,onChange){
     const figHint=s.F?` Tick the minifigs you have so they count on the Figs tab (${figOwn} of ${s.F} ticked).`:'';
     if(started&&!(r&&r.ps))msg=`<b class="ok">${H(cond()||'New')}: all ${s.n.toLocaleString()} parts count as there.</b>${figHint}`;
     else if(!started)msg=`<b>Not checked yet.</b> Tick the parts${s.F?' and minifigs':''} you have. ${s.n.toLocaleString()} parts in ${s.L} lots${fl}.${s.F?` Minifigs count as yours on the Figs tab once ticked${figOwn?` (${figOwn} ticked)`:''}.`:''}`;
-    else if(!s.m&&!s.k&&!s.f)msg=r&&r.fq&&figOwn<s.F?`<b class="ok">Complete.</b> All ${s.n.toLocaleString()} parts in ${s.L} lots checked.${figHint}`:`<b class="ok">Complete.</b> All ${s.n.toLocaleString()} parts in ${s.L} lots${fl} checked.`;
+    else if(!s.m&&!s.f&&figOwn>=s.F)msg=`<span class="pl-stamp">${STAMP}Complete</span> All ${s.n.toLocaleString()} parts in ${s.L} lots${fl} checked.${s.k?' Sticker sheets are extras and don\'t count.':''}`;
+    else if(!s.m&&!s.f)msg=r&&r.fq&&figOwn<s.F?`<b class="ok">Complete.</b> All ${s.n.toLocaleString()} parts in ${s.L} lots checked.${figHint}`:`<b class="ok">Complete.</b> All ${s.n.toLocaleString()} parts in ${s.L} lots${fl} checked.`;
     else{const mb=[];if(s.m)mb.push(`${s.m.toLocaleString()} part${s.m===1?'':'s'} in ${s.l} lot${s.l===1?'':'s'}`);if(s.f)mb.push(`${s.f} minifig${s.f===1?'':'s'}`);
-      msg=`<b class="ms">Missing ${mb.join(' and ')||'nothing'}</b>${s.k?` + ${s.k>1?s.k+' sticker sheets':'sticker sheet'}`:''} · ${done.toLocaleString()} of ${s.n.toLocaleString()} parts checked`;}
+      msg=`<b class="ms">Missing ${mb.join(' and ')||'nothing'}</b> · ${done.toLocaleString()} of ${s.n.toLocaleString()} parts checked`;}
     return {html:`<div class="pl-sum">${msg}</div><div class="pl-bar"><i style="width:${started?pct:0}%"></i></div>`,s,started};
   };
-  const paintHead=()=>{const h=head();el.querySelector('.pl-head').innerHTML=h.html;const w=el.querySelector('[data-wl]');if(w)w.hidden=!(h.started&&(h.s.m||h.s.k));
-    const nm=h.s.l+(h.s.k?1:0)+(h.s.f?figLinesMissing():0);
+  const paintHead=()=>{const h=head();el.querySelector('.pl-head').innerHTML=h.html;el.querySelectorAll('[data-wl]').forEach(w=>w.hidden=!(h.started&&(h.s.m||h.s.f)));
+    const nm=h.s.l+(h.s.f?figLinesMissing():0);
     const f=el.querySelector('.pl-only');if(f)f.textContent=onlyMiss?'Show all parts':`Show missing only${h.started&&nm?' ('+nm+')':''}`;};
   const figLinesMissing=()=>{const r=rec(kind,id),c=cond();return M.lines.filter(o=>o.fig&&have(r,o,c)<o.q).length;};
-  const groups=()=>{const g=new Map();for(const o of M.lines){const key=o.fig?'Minifigs':o.sheet?'Stickers':grp==='color'?o.col.n:o.grp;if(!g.has(key))g.set(key,{c:(o.sheet||o.fig)?null:(grp==='color'?o.col:null),L:[]});g.get(key).L.push(o);}
-    const arr=[...g.entries()];arr.sort((a,b)=>(b[0]==='Minifigs')-(a[0]==='Minifigs')||(a[0]==='Stickers')-(b[0]==='Stickers')||b[1].L.length-a[1].L.length||a[0].localeCompare(b[0]));return arr;};
+  const groups=()=>{const g=new Map();for(const o of M.lines){const key=o.fig?'Minifigs':o.sheet?'Extras':grp==='color'?o.col.n:o.grp;if(!g.has(key))g.set(key,{c:(o.sheet||o.fig)?null:(grp==='color'?o.col:null),L:[]});g.get(key).L.push(o);}
+    const arr=[...g.entries()];arr.sort((a,b)=>(b[0]==='Minifigs')-(a[0]==='Minifigs')||(a[0]==='Extras')-(b[0]==='Extras')||b[1].L.length-a[1].L.length||a[0].localeCompare(b[0]));return arr;};
   const paintList=()=>{
     const r=rec(kind,id),c=cond();let html='',shown=0;
     for(const [name,g] of groups()){
-      const rows=g.L.filter(o=>!onlyMiss||have(r,o,c)<o.q);if(!rows.length)continue;shown+=rows.length;
-      html+=`<section class="pl-g"><h5>${g.c?swatch(g.c):''}${H(name)} <span>${rows.length}</span></h5>${rows.map(o=>rowHTML(o,have(r,o,c),!!(r&&r.sa&&r.sa[o.k]))).join('')}</section>`;
+      const rows=g.L.filter(o=>!onlyMiss||(!o.sheet&&have(r,o,c)<o.q&&!(o.fig&&!(r&&r.ps&&!r.fq))));if(!rows.length)continue;shown+=rows.length;
+      html+=`<section class="pl-g"><h5>${g.c?swatch(g.c):''}${H(name)} <span>${rows.length}</span>${name==='Extras'?'<em class="pl-exn">Not counted as missing. Tick if you still have it.</em>':''}</h5>${rows.map(o=>rowHTML(o,have(r,o,c),!!(r&&r.sa&&r.sa[o.k]))).join('')}</section>`;
     }
     el.querySelector('.pl-list').innerHTML=html||`<p class="pl-empty">${onlyMiss?'Nothing missing. This one is complete.':'No parts listed.'}</p>`;
   };
@@ -235,11 +247,12 @@ function mount(slot,kind,id,getCond,onChange){
     changed(o.fig);};
   const paint=()=>{
     const src=M.src==='bl'?`BrickLink inventory, fetched with your BrickLink keys${M.date?' on '+H(M.date):''} and saved on this device${M.hasStickers?'. Stickered parts are paired with their plain part':''}`:`Rebrickable inventory (plain parts and sticker sheets)${blKeys()?'':'. Connect BrickLink on the Value tab to see stickered parts'}`;
-    el.innerHTML=`<div class="pl-head"></div>
+    const sv_=opts.onSave?`<button type="button" class="pl-btn pl-save" data-plsave>${SAVE_IC}${H(opts.saveLabel||'Save parts list')}</button>`:'';
+    el.innerHTML=`${sv_?`<div class="pl-savebar pl-top">${sv_}<span>Ticks save as you go. This button also saves the quantity and condition above.</span></div>`:''}<div class="pl-head"></div>
 <div class="pl-tools"><button type="button" class="pl-btn" data-all="1">Check all</button><button type="button" class="pl-btn" data-all="0">Uncheck all</button><button type="button" class="pl-btn pl-only" aria-pressed="${onlyMiss}"></button>
 <label class="pl-grp">Group <select data-grp><option value="color">Color</option><option value="type">Type</option></select></label></div>
 <div class="pl-list"></div>
-<div class="pl-foot"><button type="button" class="pl-btn" data-wl hidden>BrickLink Wanted List (XML)</button><span>${src?`Parts list: ${src}. Spare parts not included.`:'No parts list for this item yet.'}${M.lines.some(o=>o.fig)?' Ticked minifigs count as yours on the Figs tab (from sets).':''}</span></div>`;
+${sv_?`<div class="pl-savebar pl-bot">${sv_}</div>`:''}<div class="pl-foot"><button type="button" class="pl-btn" data-wl hidden>BrickLink Wanted List (XML)</button><span>${src?`Parts list: ${src}. Spare parts not included.`:'No parts list for this item yet.'}${M.lines.some(o=>o.fig)?' Ticked minifigs count as yours on the Figs tab (from sets).':''}</span></div>`;
     el.querySelector('[data-grp]').value=grp;
     paintHead();paintList();
   };
@@ -258,13 +271,14 @@ function mount(slot,kind,id,getCond,onChange){
     if(a){const r=ensure(kind,id,cond());r.b=+a.dataset.all;r.fb=r.b;r.h={};r.ps=1;delete r.fq;changed(true);paintList();return;}
     if(t.closest('.pl-only')){onlyMiss=!onlyMiss;t.closest('.pl-only').setAttribute('aria-pressed',onlyMiss);paintHead();paintList();return;}
     if(t.closest('[data-wl]')){wanted(kind,id,M,cond());return;}
+    if(t.closest('[data-plsave]')){flush();if(opts.onSave)opts.onSave();return;}
   });
   el.addEventListener('change',e=>{if(e.target.matches('[data-grp]')){grp=e.target.value;paintList();}});
   const ready=D=>{if(!el.isConnected&&!el.parentNode)return;M=build(D,kind,id);const r=rec(kind,id);if(r){migrate(r,M);storeSummary(kind,id,M,cond());}paint();onChange&&onChange({});};
   load(kind,id,ready).then(D=>{if(!D&&!figNeeds(kind,id).length){el.innerHTML=`<p class="pl-empty">No parts list for this ${kind==='set'?'set':'minifig'} yet.</p>`;return;}ready(D);})
     .catch(err=>{if(figNeeds(kind,id).length){ready(null);const f=el.querySelector('.pl-foot span');if(f)f.textContent=(err.message||'Could not load the parts list.')+' The minifigs above can still be ticked.';return;}
       el.innerHTML=`<p class="pl-empty">${H(err.message||'Could not load the parts list.')} <button type="button" class="pl-btn" data-retry>Try again</button></p>`;
-      const b=el.querySelector('[data-retry]');if(b)b.onclick=()=>{MEM.delete(kind+':'+id);const s=document.createElement('div');el.replaceWith(s);mount(s,kind,id,getCond,onChange);};});
+      const b=el.querySelector('[data-retry]');if(b)b.onclick=()=>{MEM.delete(kind+':'+id);const s=document.createElement('div');el.replaceWith(s);mount(s,kind,id,getCond,onChange,opts);};});
   el.refreshCond=()=>{if(M){paintHead();paintList();}};
   return el;
 }
@@ -272,7 +286,7 @@ function mount(slot,kind,id,getCond,onChange){
 // ---------- BrickLink Wanted List XML ----------
 function wanted(kind,id,M,cond){
   const r=rec(kind,id),items=[];let skipped=0;
-  for(const o of M.lines){const miss=o.q-have(r,o,cond);if(miss<=0)continue;
+  for(const o of M.lines){const miss=o.q-have(r,o,cond);if(miss<=0||o.sheet)continue; // sticker sheets are extras
     if(o.fig&&!(r&&r.ps&&!r.fq))continue; // minifigs only count as missing once the parts checklist is started
     if(o.fig){let bl=null;try{bl=typeof figIds==='function'?figIds(o.no).bl:null;}catch(e){}if(!bl){skipped++;continue;}
       items.push(`<ITEM><ITEMTYPE>M</ITEMTYPE><ITEMID>${H(bl)}</ITEMID><MINQTY>${miss}</MINQTY><CONDITION>X</CONDITION><REMARKS>${H('Set '+id)}</REMARKS><NOTIFY>N</NOTIFY></ITEM>`);continue;}
@@ -340,6 +354,11 @@ const css=document.createElement('style');css.textContent=`
 .pl-q output{min-width:44px;text-align:center;font-weight:800;font-size:14px;color:#FFB3A8;cursor:pointer;font-variant-numeric:tabular-nums}
 .pl-q output.ok{color:#C6E86B}.pl-q output.pt{color:#FFE68A}
 .pl-q.one output{min-width:36px}
+.pl-stamp{display:inline-flex;align-items:center;gap:5px;background:#4B9F4A;color:#F2F3F2;font-weight:900;letter-spacing:.06em;text-transform:uppercase;font-size:12px;padding:2px 8px 2px 4px;border-radius:5px;border:2px solid #05131D;margin-right:4px;vertical-align:middle}
+.pl-stic{width:18px;height:17px;flex:none;vertical-align:middle}
+.pl-savebar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:6px 0}.pl-savebar span{font-size:12px;color:#A0A5A9}
+.pl-save{background:#F2CD37;color:#05131D;border:2px solid #05131D;font-weight:800;display:inline-flex;align-items:center;gap:6px}
+.pl-exn{display:block;font-style:normal;font-weight:400;font-size:11px;color:#A0A5A9;text-transform:none;letter-spacing:0;margin-top:2px}
 .pl-foot{margin-top:8px;font-size:12px;color:#E4E5E2;display:flex;flex-direction:column;gap:6px;align-items:flex-start}
 .pl-note{background:#05131D;border-radius:6px;padding:6px 8px;color:#F2F3F2}
 @media (max-width:520px){.pl-r{grid-template-columns:28px 52px minmax(0,1fr);grid-template-areas:'ck im t' 'ck im q';padding:6px 6px 6px 6px}.pl-im{width:52px;height:52px}.pl-im img{max-width:48px;max-height:48px}.pl-q{justify-self:end}.pl-q.one{display:none}.pl-x1{display:inline}.pl-q button{width:34px;height:32px}}
@@ -351,6 +370,6 @@ function resetFigTicks(){let n=0;for(const b of [ST.sets,ST.figs])for(const k in
     if(r.fb){delete r.fb;n++;}if(r.ps)r.fq=1;else delete r.fq;if(r.s)r.s.f=0;}
   clearTimeout(saveT);dirty=false;sv(LS,ST);return n;}
 function resetAll(){ST={sets:{},figs:{}};clearTimeout(saveT);dirty=false;try{localStorage.removeItem(LS);}catch(e){}MEM.clear();}
-window.StudParts={loose:LOOSE,resetFigTicks,resetAll,mount,figsOwned,started:(kind,id,cond)=>started_(rec(kind,id),cond),clearBrickLinkCopies:blClearLocal,summary,missingText,exportField,importField,clear,build,wanted:(kind,id)=>{const D=MEM.get(kind+':'+id);return D?wanted(kind,id,build(D),''):null;},
+window.StudParts={loose:LOOSE,isComplete,STAMP,resetFigTicks,resetAll,mount,figsOwned,started:(kind,id,cond)=>started_(rec(kind,id),cond),clearBrickLinkCopies:blClearLocal,summary,missingText,exportField,importField,clear,build,wanted:(kind,id)=>{const D=MEM.get(kind+':'+id);return D?wanted(kind,id,build(D),''):null;},
   _state:()=>JSON.parse(JSON.stringify(ST)),_flush:flush};
 })();

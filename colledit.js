@@ -375,6 +375,7 @@ const css=document.createElement('style');css.setAttribute('data-ss','colledit')
 .ce-badge{position:absolute;top:8px;left:8px;z-index:2;background:#A5CA18;color:#05131D;font-size:10px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;padding:2px 6px;border-radius:3px;border:1.5px solid #05131D;box-shadow:inset 0 2px 0 rgba(255,255,255,.35)}
 .ce-badge.ed{background:#36AEBF}
 .ce-badge.ms{background:#C91A09;color:#F2F3F2}
+.ce-badge.ok{background:#4B9F4A;color:#F2F3F2;display:inline-flex;align-items:center;gap:3px;padding-left:3px}.ce-badge.ok .pl-stic{width:14px;height:13px}
 .ce-badge.ce-tr{left:auto;right:8px}
 .ce-own-line{margin-top:8px;font-size:14px}
 .ce-from{margin-top:4px;font-size:13px;line-height:1.5}
@@ -480,10 +481,11 @@ function paintBars(){
 }
 function decorate(){
   if(isDemo())return;
-  document.querySelectorAll('#mysets .setcard[data-num]').forEach(c=>mark(c,status('set',c.dataset.num),hasMiss('set',c.dataset.num)?missSummary('set',c.dataset.num):''));
+  document.querySelectorAll('#mysets .setcard[data-num]').forEach(c=>mark(c,status('set',c.dataset.num),hasMiss('set',c.dataset.num)?missSummary('set',c.dataset.num):'',isDone('set',c.dataset.num)));
   document.querySelectorAll('#myfigs .figcard').forEach(c=>{const id=c.getAttribute('data-id')||((c.querySelector('img.setimg')||{}).alt);if(id)mark(c,status('fig',id),hasMiss('fig',id)?missSummary('fig',id):'');});
 }
-function mark(card,s,miss){card.querySelectorAll(':scope > .ce-badge').forEach(x=>x.remove());card.classList.toggle('ce-flag',!!(s||miss));
+function mark(card,s,miss,done){card.querySelectorAll(':scope > .ce-badge').forEach(x=>x.remove());card.classList.toggle('ce-flag',!!(s||miss||done));
+  if(done&&!miss)card.insertAdjacentHTML('afterbegin',`<span class="ce-badge ok ce-tr" title="Complete: every part and minifig checked">${STAMP_IC()}Complete</span>`);
   if(miss)card.insertAdjacentHTML('afterbegin',`<span class="ce-badge ms ce-tr" title="Missing: ${H(miss)}">Missing</span>`);
   if(s==='added'||s==='edited')card.insertAdjacentHTML('afterbegin',`<span class="ce-badge${s==='edited'?' ed':''}" title="${s==='added'?'Added in StudScore':'Edited in StudScore'}">${s==='added'?'Added':'Edited'}</span>`);}
 
@@ -595,9 +597,11 @@ function enhance(bg){
 // ---------- figs: loose copies vs copies that come with your sets ----------
 function figInfo(id){
   let inset={};try{inset=typeof figsFromSets==='function'?figsFromSets(owned):{};}catch(e){}
-  const loose=curQty('fig',id),s=inset[id],from=[];
+  const fid=figFid(id,Object.keys(inset)),loose=curQty('fig',id),s=inset[id]||(fid&&inset[fid]),from=[];
   if(s)for(const k of s.from||[]){const q=s.per?(s.per[k]|0):0;if(q||!s.per)from.push({k,q:q||1});}
-  const ins=s?s.qty:0;return {loose,ins,total:loose+ins,from};
+  // loose copies of the same minifig saved under another number (one card shows them together; this popup edits this number's)
+  let oth=0;const alts=fid?figAlts(fid):[];for(const k in exFigs())if(k!==id&&(k===fid||alts.includes(lcs(k))||(fid&&figFid(k)===fid)))oth+=curQty('fig',k);
+  const ins=s?s.qty:0;return {loose,ins,oth,total:loose+ins+oth,from,fid};
 }
 function inSetsCount(id){return figInfo(id).ins;}
 const figTotal=id=>figInfo(id).total;
@@ -610,6 +614,10 @@ const figTotal=id=>figInfo(id).total;
 // them to mean "I have it", which took the fig away. Old records of that kind are dropped once, below.
 function missRec(kind,id){return (kind==='set'?MISS.sets:MISS.figs)[id]||null;}
 const PARTS=()=>window.StudParts||null;
+// COMPLETE: every part and minifig ticked in a checklist started by hand (parts.js isComplete; sticker sheets are extras)
+function isDone(kind,id){if(kind!=='set'||isDemo())return false;const P=PARTS();try{return !!(P&&P.isComplete&&P.isComplete(kind,id))&&!hasMiss(kind,id);}catch(e){return false;}}
+const STAMP_IC=()=>(PARTS()&&PARTS().STAMP)||'';
+function sumBadge(kind,id){if(hasMiss(kind,id))return ` <span class="ce-badge ms">${H(missSummary(kind,id))}</span>`;if(isDone(kind,id))return ` <span class="ce-badge ok">${STAMP_IC()}Complete</span>`;return '';}
 function partsMiss(kind,id){const P=PARTS();if(!P)return '';try{return P.missingText(kind,id);}catch(e){return '';}}
 function hasMiss(kind,id){if(partsMiss(kind,id))return true;const m=missRec(kind,id);if(!m)return false;return (m.n>0)||!!(m.note&&m.note.trim());}
 function setMiss(kind,id,m){const M=kind==='set'?MISS.sets:MISS.figs;
@@ -626,10 +634,33 @@ if(typeof figsFromSets==='function'){const _ffs=figsFromSets;figsFromSets=functi
       if(q>0){f.qty=q;f.from=from;f.per=per;}else delete out[fid];}}catch(e){console.error('colledit set figs',e);}
   return out;};}
 // one more loose copy of a minifig (fig popup and the set checklist's minifig lines)
-function looseKey(fid){if(exFigs()[fid]||EDITS.figs[fid])return fid;const bl=/^fig-/i.test(fid)?blOf(fid):null;if(bl&&(exFigs()[bl]||EDITS.figs[bl]))return bl;return /^fig-/i.test(fid)?figKeyFor(fid):fid;}
+function looseKey(fid){if(exFigs()[fid]||EDITS.figs[fid])return fid;const bl=/^fig-/i.test(fid)?blOf(fid):null;if(bl&&(exFigs()[bl]||EDITS.figs[bl]))return bl;
+  if(/^fig-/i.test(fid)){const alts=figAlts(fid);const hit=Object.keys(exFigs()).concat(Object.keys(EDITS.figs)).find(k=>alts.includes(lcs(k)));if(hit)return hit;}return /^fig-/i.test(fid)?figKeyFor(fid):fid;}
 function markLoose(fid){const k=looseKey(fid),f=/^fig-/i.test(fid)?fid:((typeof figIds==='function'&&figIds(fid).fig)||fid);
   setEdit('fig',k,curQty('fig',k)+1,curCond('fig',k)||'',{name:figLabel(k),theme:figThemeOf(f,/^fig-/i.test(k)?blOf(k):k)});}
 if(PARTS()&&PARTS().loose&&!isDemo()){PARTS().loose.count=fid=>curQty('fig',looseKey(fid));PARTS().loose.add=fid=>{markLoose(fid);figRefresh();};}
+// ---------- one card per minifig ----------
+// A loose copy saved under a BrickLink or Brick Owl number (sw0131) and the same minifig from a set under its Rebrickable number
+// (fig-xxxxxx) used to be two cards. figids.js (Rebrickable set_mappings) links them; allFigs() below merges them into one
+// card: the loose copy's id is kept (so the popup edits the loose copies you have), qty = loose + from sets, from = the sets.
+const lcs=x=>String(x||'').toLowerCase();
+const ALTS=new Map();
+function figAlts(fid){if(ALTS.has(fid))return ALTS.get(fid);const v=figAlts_(fid);ALTS.set(fid,v);return v;}
+function figAlts_(fid){try{const r=typeof figIds==='function'?figIds(fid):null;return r?[r.bl,r.bo].filter(Boolean).map(lcs):[];}catch(e){return [];}}
+// the Rebrickable fig- id for any minifig id, preferring one of the given candidates (set figs) when a BrickLink number maps to several
+function figFid(id,cands){if(/^fig-/i.test(id))return String(id).replace(/^FIG-/i,'fig-');const l=lcs(id);
+  for(const c of cands||[])if(figAlts(c).includes(l))return c;
+  try{const r=typeof figIds==='function'?figIds(id):null;return (r&&r.fig)||null;}catch(e){return null;}}
+if(typeof allFigs==='function'){const _af=allFigs;allFigs=function(){const all=_af.apply(this,arguments);
+  try{const fids=Object.keys(all).filter(k=>/^fig-/i.test(k)),g=new Map();
+    for(const id in all){const k=figFid(id,fids)||id;if(!g.has(k))g.set(k,[]);g.get(k).push(id);}
+    for(const [k,ids] of g){if(ids.length<2)continue;
+      const key=ids.filter(i=>(all[i].loose|0)>0).sort((a,b)=>(all[b].loose|0)-(all[a].loose|0)||(/^fig-/i.test(a)-/^fig-/i.test(b)))[0]||(ids.includes(k)?k:ids[0]);
+      const m=Object.assign({},all[key],{qty:0,loose:0,from:[],ids:ids.slice()});
+      for(const i of ids){const f=all[i];m.qty+=f.qty|0;m.loose+=f.loose|0;for(const x of f.from||[])if(!m.from.includes(x))m.from.push(x);
+        if(f.per){m.per=Object.assign(m.per||{},f.per);}if((!m.theme||m.theme==='Other')&&f.theme)m.theme=f.theme;if((!m.name||m.name===key)&&f.name)m.name=f.name;if(i!==key)delete all[i];}
+      all[key]=m;}}catch(e){console.error('colledit merge figs',e);}
+  return all;};}
 // owned sets that include this minifig but where it isn't ticked (fully) yet
 function figUnticked(fid){const out=[];if(typeof SETFIGS==='undefined'||typeof owned==='undefined'||!owned||!PARTS())return out;
   for(const k in owned){const l=SETFIGS[k];if(!l||!owned[k])continue;const e=l.find(x=>x[0]===fid);if(!e)continue;const need=e[1]*Math.max(1,owned[k]|0);
@@ -646,12 +677,12 @@ function paintEditor(box,info,msg,keep){
   const m0=missRec(kind,id)||{};let mn=k.mn!=null?k.mn:(m0.n|0),mnote=k.mnote!=null?k.mnote:(m0.note||'');
   let mopen=k.mopen!=null?k.mopen:(hasMiss(kind,id)||/incomplete/i.test(cond));
   const minQ=isSet?1:(ins?0:1);
-  const unt=isSet?[]:figUnticked(id);
+  const unt=isSet?[]:figUnticked((fi&&fi.fid)||id);
   const draw=m=>{
     const owns=now>0;
     const fromH=!isSet&&fi.from.length?`<div class="ce-from"><b>${ins} from your sets:</b> ${fi.from.map(x=>`<button type="button" class="ce-link" data-open="${H(x.k)}">${H(sn(x.k))} ${H(SETS[x.k]?SETS[x.k][0]:'')}${x.q>1?' ×'+x.q:''}</button>`).join(', ')}</div>`:'';
-    const ownLine=isSet?'':`<div class="ce-own-line">You own <b>×${now}</b>${ins||loose?`: ${ins} from sets, ${loose} loose`:''}</div>`;
-    const missH=owns?`<details class="ce-miss"${mopen?' open':''}><summary>Parts and missing pieces${hasMiss(kind,id)?` <span class="ce-badge ms">${H(missSummary(kind,id))}</span>`:''}</summary>
+    const ownLine=isSet?'':`<div class="ce-own-line">You own <b>×${now}</b>${ins||loose||fi.oth?`: ${ins} from sets, ${loose+(fi.oth|0)} loose`:''}</div>`;
+    const missH=owns?`<details class="ce-miss"${mopen?' open':''}><summary>Parts and missing pieces${sumBadge(kind,id)}</summary>
 <div class="ce-lbl">${isSet&&typeof SETFIGS!=='undefined'&&(SETFIGS[id]||[]).length?'Minifigs and parts':'Parts'}</div><div data-pl></div>
 ${(mn>0||mnote.trim())?`<div class="ce-legacy">Earlier entry: ${mn>0?H(mn)+' missing piece'+(mn>1?'s':''):''}${mn>0&&mnote.trim()?' · ':''}${mnote.trim()?'“'+H(mnote.trim())+'”':''} <button type="button" class="ce-ghost" data-clrold="1">Clear</button></div>`:''}
 </details>`:'';
@@ -667,7 +698,8 @@ ${r?`<button type="button" class="ce-ghost" data-undo="1">Undo app edits${fq?` (
 <div class="ce-msg" role="status">${m?H(m):''}</div>`;
     const slot=box.querySelector('[data-pl]');
     if(slot&&PARTS()){if(box._pl&&box._pl.dataset.id===kind+':'+id){slot.replaceWith(box._pl);if(box._pl.refreshCond)box._pl.refreshCond();}
-      else{const det=box.querySelector('.ce-miss');const go=()=>{if(!slot.isConnected)return;box._pl=PARTS().mount(slot,kind,id,()=>cond,(ev)=>{if(ev&&ev.figs)figRefresh();const sm=box.querySelector('.ce-miss>summary');if(sm){const b=sm.querySelector('.ce-badge');const t=hasMiss(kind,id)?missSummary(kind,id):'';if(b){if(t)b.textContent=t;else b.remove();}else if(t)sm.insertAdjacentHTML('beforeend',` <span class="ce-badge ms">${H(t)}</span>`);}try{decorate();}catch(e){}});};
+      else{const det=box.querySelector('.ce-miss');const go=()=>{if(!slot.isConnected)return;box._pl=PARTS().mount(slot,kind,id,()=>cond,(ev)=>{if(ev&&ev.figs)figRefresh();const sm=box.querySelector('.ce-miss>summary');if(sm){sm.querySelectorAll('.ce-badge').forEach(b=>b.remove());sm.insertAdjacentHTML('beforeend',sumBadge(kind,id));}try{decorate();}catch(e){}},
+          {saveLabel:'Save parts list',onSave:()=>{const b=box.querySelector('.ce-go [data-save]');if(b)b.click();}});};
         if(!det||det.open)go();else det.addEventListener('toggle',function t(){if(det.open){det.removeEventListener('toggle',t);go();}});}}
     else if(slot)slot.outerHTML='<p class="muted small">Parts lists are not available right now.</p>';
     const grab=()=>{const d=box.querySelector('.ce-miss');if(d)mopen=d.open;};

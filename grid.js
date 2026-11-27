@@ -100,7 +100,9 @@ document.addEventListener('keydown',e=>{
 let figSort='theme',figShow='all'; // figShow: all | loose | sets (Figs tab filter)
 
 function figYearParts(id){
-  const m=(typeof FIGMETA!=='undefined'&&FIGMETA[id])||null;
+  // a card kept under a BrickLink number (loose copy merged with set copies) still gets its Rebrickable facts
+  let m=(typeof FIGMETA!=='undefined'&&FIGMETA[id])||null;
+  if(!m&&typeof FIGMETA!=='undefined'&&!/^fig-/i.test(id)&&typeof figIds==='function'){try{const f=figIds(id).fig;if(f)m=FIGMETA[f]||null;}catch(e){}}
   return {parts:(m&&m[0])||0,year:(m&&m[1])||0};
 }
 function bindFigCards(root){
@@ -139,7 +141,7 @@ function renderFigsSorted(){
   for(const f of shown){
     if(sort==='theme'&&f.theme!==last){html+=`<div class="setgroup">${E(f.theme)}</div>`;last=f.theme;}
     const from=typeof figFromTxt==='function'?figFromTxt(f):'';
-    const meta=typeof figMetaTxt==='function'?figMetaTxt(f.id):'';
+    let mid=f.id;if(typeof FIGMETA!=='undefined'&&!FIGMETA[mid]&&typeof figIds==='function'){try{mid=figIds(mid).fig||mid;}catch(e){}}const meta=typeof figMetaTxt==='function'?figMetaTxt(mid):'';
     const img=typeof figImg==='function'?figImg(f.id):'';
     html+=`<div class="setcard figcard" role="button" tabindex="0" data-id="${E(f.id)}"><div class="imgtile"><img class="setimg" loading="lazy" alt="${E(f.id)}" src="${img}" onerror="this.outerHTML='<div class=&quot;setph&quot;>🙂</div>'"></div><div class="setinfo"><b>${E(f.name||f.id)}</b><span class="setsub">${E(f.id)}${f.qty>1?' · ×'+f.qty:''}${E(from)}${(f.loose||0)>0&&!(f.from&&f.from.length)?' · loose':''}</span>${meta}</div></div>`;
   }
