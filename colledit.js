@@ -284,7 +284,7 @@ function paintSources(){
   const S=isDemo()?[]:(SOURCES||[]);
   if(!S.length){if(box)box.remove();return;}
   if(!box){box=document.createElement('div');box.id='ce-sources';box.className='ce-bar ce-srcbox';ib.insertAdjacentElement('afterend',box);}
-  box.innerHTML=`<div class="ce-srch">Loaded files</div>${sourcesHTML()}<div class="ce-go" style="margin-top:6px"><button type="button" class="ce-add" data-ce="upload">${ICON_BRICK}Upload another file</button><button type="button" class="ce-ghost ce-fresh" data-ce="fresh">${ICON_RESET}Start fresh</button></div><div class="muted small">BrickLink exports sets and minifigs separately. Upload both and they add together.</div>`;
+  box.innerHTML=`<div class="ce-srch">Loaded files</div>${sourcesHTML()}<div class="ce-go" style="margin-top:6px"><button type="button" class="ce-add" data-ce="upload">${ICON_BRICK}Upload another file</button><button type="button" class="ce-ghost bk-btn" data-bk="backup">${(window.StudBackup&&StudBackup.IC_BACKUP)||''}Back up my collection</button><button type="button" class="ce-ghost ce-fresh" data-ce="fresh">${ICON_RESET}Start fresh</button></div><div class="muted small bk-last"></div><div class="muted small">BrickLink exports sets and minifigs separately. Upload both and they add together.</div>`;
 }
 document.addEventListener('click',e=>{
   const rmb=e.target.closest&&e.target.closest('[data-src-rm]');
@@ -476,7 +476,7 @@ function paintBars(){
     if(!bar){bar=document.createElement('div');bar.id='ce-bar-'+tab;bar.className='ce-bar';host.parentNode.insertBefore(bar,host);}
     if(isDemo()){bar.innerHTML=`<span class="ce-sum">This is the demo collection. Start your own to add ${kind==='set'?'sets':'minifigs'} here.</span><span class="ce-sp"></span><button type="button" class="ce-add" data-ce="own">${ICON_BRICK}Start my own</button>`;return;}
     const c=counts(),bits=[];if(c.a)bits.push(c.a+' added');if(c.e)bits.push(c.e+' edited');if(c.r)bits.push(c.r+' removed');
-    bar.innerHTML=`<button type="button" class="ce-add" data-ce="add" data-kind="${kind}">${kind==='set'?ICON_BRICK:ICON_FIG}Add ${kind==='set'?'a set':'a minifig'}</button><span class="ce-sp"></span>${c.n?`<button type="button" class="ce-ghost" data-ce="review" title="${H(bits.join(' · '))}">In-app edits (${c.n})</button>`:''}${(SOURCES||[]).length?`<button type="button" class="ce-ghost" data-ce="files" title="${H(sourcesNote())}">Files (${SOURCES.length})</button>`:''}<button type="button" class="ce-ghost" data-ce="export" title="Download your collection, with in-app edits, as a CSV you can re-upload">Export CSV</button><button type="button" class="ce-ghost ce-fresh" data-ce="fresh" title="Reset minifig ticks, recount achievements, or remove everything saved on this device">${ICON_RESET}Start fresh</button>`;
+    bar.innerHTML=`<button type="button" class="ce-add" data-ce="add" data-kind="${kind}">${kind==='set'?ICON_BRICK:ICON_FIG}Add ${kind==='set'?'a set':'a minifig'}</button><span class="ce-sp"></span>${c.n?`<button type="button" class="ce-ghost" data-ce="review" title="${H(bits.join(' · '))}">In-app edits (${c.n})</button>`:''}${(SOURCES||[]).length?`<button type="button" class="ce-ghost" data-ce="files" title="${H(sourcesNote())}">Files (${SOURCES.length})</button>`:''}<button type="button" class="ce-ghost" data-ce="export" title="Download your collection, with in-app edits, as a CSV you can re-upload">Export CSV</button><button type="button" class="ce-ghost bk-btn" data-bk="backup" title="Download a backup file you can restore after clearing your browser">${(window.StudBackup&&StudBackup.IC_BACKUP)||''}Back up</button><button type="button" class="ce-ghost ce-fresh" data-ce="fresh" title="Reset minifig ticks, recount achievements, or remove everything saved on this device">${ICON_RESET}Start fresh</button>`;
   });
 }
 function decorate(){
@@ -763,7 +763,7 @@ ${['figs','ach','all'].map((k,i)=>`<label class="ce-fopt"><input type="radio" na
 function freshConfirm(v,fk){
   const o=FRESH[v],keys=o.keys.concat(fk?FRESH.keys:[]);
   const bg=sheet('ce-fresh-bg','Start fresh',`<div class="ce-head">${ICON_RESET}<h2>${H(o.t)}?</h2></div><div class="ce-pick" style="padding-top:0">
-<p>${H(o.d.replace(/ Your BrickLink and BrickEconomy keys stay unless you tick the box below\./,''))}</p>${keys.length?`<div class="ce-srch">Cleared on this device</div><ul class="ce-fl">${keys.map(k=>`<li>${H(k)}</li>`).join('')}</ul>${v==='all'&&!fk?'<p class="muted small">Kept: your BrickLink and BrickEconomy keys, and display choices (tile size).</p>':''}<p class="muted small">This can't be undone. Export CSV first if you may want it back.</p>`:'<p class="muted small">Nothing is deleted.</p>'}
+<p>${H(o.d.replace(/ Your BrickLink and BrickEconomy keys stay unless you tick the box below\./,''))}</p>${keys.length?`<div class="ce-srch">Cleared on this device</div><ul class="ce-fl">${keys.map(k=>`<li>${H(k)}</li>`).join('')}</ul>${v==='all'&&!fk?'<p class="muted small">Kept: your BrickLink and BrickEconomy keys, and display choices (tile size).</p>':''}<p class="muted small">This can't be undone. Back up first (Back up my collection) if you may want it back.</p>`:'<p class="muted small">Nothing is deleted.</p>'}
 <div class="ce-go"><button type="button" class="ce-ghost" data-fback>Back</button><button type="button" class="ce-add${keys.length?' ce-danger':''}" data-fgo>${keys.length?'Yes, start fresh':'Recount now'}</button></div></div>`);
   bg.querySelector('[data-fback]').onclick=openFresh;
   bg.querySelector('[data-fgo]').onclick=()=>{const msg=doFresh(v,fk);closeSheet('ce-fresh-bg');try{sessionStorage.setItem('studFreshMsg',msg);}catch(e){}resetting=true;location.reload();};
@@ -822,7 +822,7 @@ function importMissing(text){
 }
 
 // ---------- start ----------
-window.StudCollEdit={missing:()=>JSON.parse(JSON.stringify(MISS)),setMiss,figInfo,edits:()=>JSON.parse(JSON.stringify(EDITS)),setEdit,undoEdit,clearAll,status,openAdd,exportCSV};
+window.StudCollEdit={hold:()=>{resetting=true;},toast,missing:()=>JSON.parse(JSON.stringify(MISS)),setMiss,figInfo,edits:()=>JSON.parse(JSON.stringify(EDITS)),setEdit,undoEdit,clearAll,status,openAdd,exportCSV};
 try{
   if(!isDemo()){if(!getBase()&&typeof owned!=='undefined'&&owned&&(Object.keys(owned).length||Object.keys(exFigs()).length))snapBase();mergeMeta();}
   // Always redraw once now. app.js and share.js draw the page while their scripts load, before this file wraps figsFromSets,
