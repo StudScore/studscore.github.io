@@ -163,7 +163,12 @@ function remindDue(){if(isDemo()||!hasEdits())return false;const m=meta(),now=Da
   return !m.last||now-Date.parse(m.last)>=REMIND_DAYS*DAY;}
 function paint(){
   const ib=document.getElementById('importbox');
-  if(ib){let row=document.getElementById('bk-row');if(!row){row=document.createElement('div');row.id='bk-row';row.className='bk-row';const go=ib.querySelector('#demo')||ib.lastElementChild;(go&&go.parentNode===ib?go:ib.lastChild).insertAdjacentElement('afterend',row);}
+  if(ib){let row=document.getElementById('bk-row');if(!row){row=document.createElement('div');row.id='bk-row';row.className='bk-row';ib.appendChild(row);}
+    // Keep this row at the end of the box. app.js placeSections() moves share.js's "Save share card" button into the Share tab
+    // only while it sits right after #demo; putting this row there (phase 6) left the Share tab with no button.
+    const sb=document.getElementById('sharebox'),stray=[...ib.querySelectorAll(':scope > button')].find(x=>/share card/i.test(x.textContent));
+    if(sb&&stray)sb.appendChild(stray);
+    if(row.nextElementSibling)ib.appendChild(row);
     const d=hasData()&&!isDemo();
     row.innerHTML=`<button type="button" class="ce-ghost bk-btn" data-bk="restore">${IC_RESTORE}Restore from backup</button>${d?`<button type="button" class="ce-ghost bk-btn" data-bk="backup">${IC_BACKUP}Back up my collection</button>`:''}${d?`<span class="muted small bk-last">${H(lastTxt())}</span>`:''}`;}
   const board=document.getElementById('board');

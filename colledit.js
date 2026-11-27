@@ -832,4 +832,8 @@ try{
   else paintBars();
   try{const m=sessionStorage.getItem('studFreshMsg');if(m){sessionStorage.removeItem('studFreshMsg');setTimeout(()=>toast(m),400);}}catch(e){}
 }catch(e){console.error('colledit init',e);}
+// Start-up curtain (index.html adds html.booting). Lift it once app.js has opened the tab from the address (its
+// DOMContentLoaded handler runs before this one) and the redraw above has run, so the first thing shown is the right tab, fully drawn.
+function bootDone(){try{(window.__studBootDone||function(){document.documentElement.classList.remove('booting');})();}catch(e){}}
+if(document.readyState==='loading')window.addEventListener('DOMContentLoaded',bootDone);else bootDone();
 })();
