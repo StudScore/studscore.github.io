@@ -239,7 +239,7 @@ function mount(slot,kind,id,getCond,onChange,opts){opts=opts||{};
     }
     el.querySelector('.pl-list').innerHTML=html||`<p class="pl-empty">${onlyMiss?'Nothing missing. This one is complete.':'No parts listed.'}</p>`;
   };
-  const changed=figs=>{storeSummary(kind,id,M,cond());paintHead();onChange&&onChange({figs:!!figs});};
+  const changed=figs=>{storeSummary(kind,id,M,cond());paintHead();onChange&&onChange({figs:!!figs});if(opts.onDirty)opts.onDirty();};
   const setHave=(o,n)=>{const r=ensure(kind,id,cond());r.h[o.k]=Math.max(0,Math.min(o.q,n));if(!o.fig)r.ps=1;else delete r.fq;
     const row=el.querySelector(`.pl-r[data-k="${CSS.escape(o.k)}"]`);
     if(row){if(onlyMiss&&r.h[o.k]>=o.q){row.classList.add('done');row.querySelector('.pl-ck').setAttribute('aria-checked','true');setTimeout(()=>{if(row.isConnected&&onlyMiss&&have(rec(kind,id),o,cond())>=o.q)row.remove();},450);}
@@ -247,12 +247,13 @@ function mount(slot,kind,id,getCond,onChange,opts){opts=opts||{};
     changed(o.fig);};
   const paint=()=>{
     const src=M.src==='bl'?`BrickLink inventory, fetched with your BrickLink keys${M.date?' on '+H(M.date):''} and saved on this device${M.hasStickers?'. Stickered parts are paired with their plain part':''}`:`Rebrickable inventory (plain parts and sticker sheets)${blKeys()?'':'. Connect BrickLink on the Value tab to see stickered parts'}`;
-    const sv_=opts.onSave?`<button type="button" class="pl-btn pl-save" data-plsave>${SAVE_IC}${H(opts.saveLabel||'Save parts list')}</button>`:'';
-    el.innerHTML=`${sv_?`<div class="pl-savebar pl-top">${sv_}<span>Ticks save as you go. This button also saves the quantity and condition above.</span></div>`:''}<div class="pl-head"></div>
+    const bar=opts.saveBar||(opts.onSave?'both':'none');
+    const sv_=(opts.onSave&&bar!=='none')?`<button type="button" class="pl-btn pl-save" data-plsave>${SAVE_IC}${H(opts.saveLabel||'Save parts list')}</button>`:'';
+    el.innerHTML=`${sv_&&bar!=='bottom'?`<div class="pl-savebar pl-top">${sv_}<span>Ticks save as you go. This button also saves the quantity and condition above.</span></div>`:''}<div class="pl-head"></div>
 <div class="pl-tools"><button type="button" class="pl-btn" data-all="1">Check all</button><button type="button" class="pl-btn" data-all="0">Uncheck all</button><button type="button" class="pl-btn pl-only" aria-pressed="${onlyMiss}"></button>
 <label class="pl-grp">Group <select data-grp><option value="color">Color</option><option value="type">Type</option></select></label></div>
 <div class="pl-list"></div>
-${sv_?`<div class="pl-savebar pl-bot">${sv_}</div>`:''}<div class="pl-foot"><button type="button" class="pl-btn" data-wl hidden>BrickLink Wanted List (XML)</button><span>${src?`Parts list: ${src}. Spare parts not included.`:'No parts list for this item yet.'}${M.lines.some(o=>o.fig)?' Ticked minifigs count as yours on the Figs tab (from sets).':''}</span></div>`;
+${sv_&&bar!=='top'?`<div class="pl-savebar pl-bot">${sv_}</div>`:''}<div class="pl-foot"><button type="button" class="pl-btn" data-wl hidden>BrickLink Wanted List (XML)</button><span>${src?`Parts list: ${src}. Spare parts not included.`:'No parts list for this item yet.'}${M.lines.some(o=>o.fig)?' Ticked minifigs count as yours on the Figs tab (from sets).':''}</span></div>`;
     el.querySelector('[data-grp]').value=grp;
     paintHead();paintList();
   };
@@ -260,7 +261,7 @@ ${sv_?`<div class="pl-savebar pl-bot">${sv_}</div>`:''}<div class="pl-foot"><but
     const t=e.target;if(!M)return;
     const row=t.closest('.pl-r');
     if(row){const o=M.lines.find(x=>x.k===row.dataset.k);if(!o)return;const r=rec(kind,id),h=have(r,o,cond());
-      if(t.closest('[data-sa]')){const rr=ensure(kind,id,cond());rr.sa=rr.sa||{};if(rr.sa[o.k])delete rr.sa[o.k];else rr.sa[o.k]=1;save();const b=t.closest('[data-sa]');b.setAttribute('aria-pressed',rr.sa[o.k]?'true':'false');b.textContent=rr.sa[o.k]?'Sticker applied':'Sticker not applied';return;}
+      if(t.closest('[data-sa]')){const rr=ensure(kind,id,cond());rr.sa=rr.sa||{};if(rr.sa[o.k])delete rr.sa[o.k];else rr.sa[o.k]=1;save();const b=t.closest('[data-sa]');b.setAttribute('aria-pressed',rr.sa[o.k]?'true':'false');b.textContent=rr.sa[o.k]?'Sticker applied':'Sticker not applied';if(opts.onDirty)opts.onDirty();return;}
       if(t.closest('[data-loose]')){if(LOOSE.add){LOOSE.add(o.no);const tmp=document.createElement('div');tmp.innerHTML=rowHTML(o,h,false);row.replaceWith(tmp.firstChild);}return;}
       const d=t.closest('[data-d]');
       if(d){setHave(o,h+(+d.dataset.d));return;}
@@ -371,5 +372,5 @@ function resetFigTicks(){let n=0;for(const b of [ST.sets,ST.figs])for(const k in
   clearTimeout(saveT);dirty=false;sv(LS,ST);return n;}
 function resetAll(){ST={sets:{},figs:{}};clearTimeout(saveT);dirty=false;try{localStorage.removeItem(LS);}catch(e){}MEM.clear();}
 window.StudParts={loose:LOOSE,isComplete,STAMP,resetFigTicks,resetAll,mount,figsOwned,started:(kind,id,cond)=>started_(rec(kind,id),cond),clearBrickLinkCopies:blClearLocal,summary,missingText,exportField,importField,clear,build,wanted:(kind,id)=>{const D=MEM.get(kind+':'+id);return D?wanted(kind,id,build(D),''):null;},
-  _state:()=>JSON.parse(JSON.stringify(ST)),_flush:flush};
+  _state:()=>JSON.parse(JSON.stringify(ST)),flush,_flush:flush};
 })();

@@ -440,6 +440,12 @@ const css=document.createElement('style');css.setAttribute('data-ss','colledit')
 .ce-edit .ce-lbl{color:#E4E5E2;margin-top:10px}
 .ce-edit .ce-msg{font-size:12px;color:#A5CA18;min-height:1em;margin-top:6px}
 .ce-toast{position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:80;background:#05131D;color:#F2F3F2;border:2px solid #A5CA18;border-radius:8px;padding:10px 14px;font-weight:700;font-size:14px;max-width:90vw;box-shadow:0 4px 14px rgba(0,0,0,.5)}
+#ce-save-ov{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));background:linear-gradient(180deg,rgba(5,19,29,0) 0%,#05131D 38%);pointer-events:none}
+#ce-save-ov[hidden]{display:none!important}
+#ce-save-ov button{pointer-events:auto;margin:0;min-height:44px;width:min(100%,420px);justify-content:center;font-size:16px}
+#ce-save-ov button[disabled]{filter:none;background:#A5CA18;box-shadow:inset 0 3px 0 rgba(255,255,255,.35),inset 0 -3px 0 #6A8A10}
+#setmodal.ce-save-open .mscroll{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+#setmodal.ce-save-open .ce-go>[data-save]{display:none}
 .ce-list .ce-row{cursor:default}
 .ce-list .ce-row button{margin:0;padding:6px 10px;font-size:12px}
 .ce-empty{color:#E4E5E2;font-size:14px;padding:10px 0}
@@ -666,14 +672,37 @@ function figUnticked(fid){const out=[];if(typeof SETFIGS==='undefined'||typeof o
   for(const k in owned){const l=SETFIGS[k];if(!l||!owned[k])continue;const e=l.find(x=>x[0]===fid);if(!e)continue;const need=e[1]*Math.max(1,owned[k]|0);
     const h=PARTS().figsOwned(k,curCond('set',k))[fid]|0;if(h<need)out.push({k,need,h});}return out;}
 
+// One Save for the card (checklist ticks/counts and quantity/condition). The always-on yellow
+// "Save parts list" buttons at the top and bottom of the list are gone. An overlay Save is pinned
+// to the bottom of the screen only while something is unsaved (a parts tick, a +/- count, or a
+// quantity/condition change), then shows "Saved" and hides. The inline Save next to Remove stays
+// for when nothing is dirty; it is hidden while the overlay is up so there is never a pair of them.
+let ovState='off',ovTimer=0,ovBox=null;
+function setSaveOv(state,box){
+  if(box)ovBox=box;
+  ovState=state;clearTimeout(ovTimer);
+  const bg=document.getElementById('setmodal');
+  if(!bg||state==='off'){const el=document.getElementById('ce-save-ov');if(el)el.hidden=true;if(bg)bg.classList.remove('ce-save-open');ovState='off';return;}
+  let el=document.getElementById('ce-save-ov');
+  if(!el){el=document.createElement('div');el.id='ce-save-ov';el.setAttribute('role','status');el.setAttribute('aria-live','polite');
+    el.innerHTML='<button type="button" class="ce-add" data-ce-save-ov>Save</button>';
+    el.querySelector('button').addEventListener('click',()=>{const b=ovBox||document.querySelector('#setmodal .ce-edit');if(b&&b._commit)b._commit();});}
+  if(el.parentNode!==bg)bg.appendChild(el);
+  el.hidden=false;bg.classList.add('ce-save-open');
+  const btn=el.querySelector('button');
+  if(state==='saved'){btn.textContent='Saved';btn.disabled=true;ovTimer=setTimeout(()=>setSaveOv('off'),1400);}
+  else{btn.textContent='Save';btn.disabled=false;}
+}
+
 // ---------- editor inside the set / fig popup ----------
 function stepHTML(v){return `<div class="ce-step"><button type="button" data-s="-1" aria-label="One less">−</button><output>${v}</output><button type="button" data-s="1" aria-label="One more">+</button></div>`;}
 function paintEditor(box,info,msg,keep){
+  if(ovState!=='saved'||ovBox!==box)setSaveOv('off');
   const {kind,id}=info,isSet=kind==='set',st=status(kind,id),fq=fileQty(kind,id),r=rec(kind,id);
   const fi=isSet?null:figInfo(id),loose=isSet?0:fi.loose,ins=isSet?0:fi.ins;
   const now=isSet?curQty('set',id):fi.total;
   const k=keep||{};
-  let qty=k.qty!=null?k.qty:(isSet?(now||1):(loose||(ins?0:1))),cond=k.cond||curCond(kind,id)||DEF[kind],armed=false;
+  let qty=k.qty!=null?k.qty:(isSet?(now||1):(loose||(ins?0:1))),cond=k.cond||curCond(kind,id)||DEF[kind],armed=false,dirty=!!k.dirty;
   const m0=missRec(kind,id)||{};let mn=k.mn!=null?k.mn:(m0.n|0),mnote=k.mnote!=null?k.mnote:(m0.note||'');
   let mopen=k.mopen!=null?k.mopen:(hasMiss(kind,id)||/incomplete/i.test(cond));
   const minQ=isSet?1:(ins?0:1);
@@ -693,29 +722,37 @@ ${unt.length?`<div class="ce-from ce-unt"><b>In your sets, not ticked as owned y
 ${!isSet&&ins?`<div class="muted small" style="margin-top:4px">Loose copies are the ones not in a set. The ${ins} from sets come from the minifigs you ticked in those sets' Parts checklists; change those there.</div>`:''}
 <div class="ce-lbl">Condition${!isSet&&ins?' (loose copies)':''}</div><div class="ce-conds">${(isSet?SET_CONDS:FIG_CONDS).map(c=>`<button type="button" data-c="${H(c)}" aria-pressed="${c===cond}">${H(c)}</button>`).join('')}</div>
 ${missH}
-<div class="ce-go">${owns?`<button type="button" data-save="1">Save changes</button>${(isSet||loose>0)?`<button type="button" class="ce-danger" data-rm="1">${armed?'Tap again to remove':(!isSet&&ins?'Remove loose copies':'Remove')}</button>`:''}${!isSet&&loose===0?`<button type="button" class="ce-add" data-own1="1">${ICON_FIG}Mark as owned (loose)</button>`:''}`:`<button type="button" class="ce-add" data-save="1">${isSet?ICON_BRICK:ICON_FIG}${isSet?'Add to my sets':'Mark as owned (loose)'}</button>`}
+<div class="ce-go">${owns?`<button type="button" class="ce-add" data-save="1">Save</button>${(isSet||loose>0)?`<button type="button" class="ce-danger" data-rm="1">${armed?'Tap again to remove':(!isSet&&ins?'Remove loose copies':'Remove')}</button>`:''}${!isSet&&loose===0?`<button type="button" class="ce-add" data-own1="1">${ICON_FIG}Mark as owned (loose)</button>`:''}`:`<button type="button" class="ce-add" data-save="1">${isSet?ICON_BRICK:ICON_FIG}${isSet?'Add to my sets':'Mark as owned (loose)'}</button>`}
 ${r?`<button type="button" class="ce-ghost" data-undo="1">Undo app edits${fq?` (file: ×${fq})`:''}</button>`:''}</div>
 <div class="ce-msg" role="status">${m?H(m):''}</div>`;
     const slot=box.querySelector('[data-pl]');
     if(slot&&PARTS()){if(box._pl&&box._pl.dataset.id===kind+':'+id){slot.replaceWith(box._pl);if(box._pl.refreshCond)box._pl.refreshCond();}
       else{const det=box.querySelector('.ce-miss');const go=()=>{if(!slot.isConnected)return;box._pl=PARTS().mount(slot,kind,id,()=>cond,(ev)=>{if(ev&&ev.figs)figRefresh();const sm=box.querySelector('.ce-miss>summary');if(sm){sm.querySelectorAll('.ce-badge').forEach(b=>b.remove());sm.insertAdjacentHTML('beforeend',sumBadge(kind,id));}try{decorate();}catch(e){}},
-          {saveLabel:'Save parts list',onSave:()=>{const b=box.querySelector('.ce-go [data-save]');if(b)b.click();}});};
+          {saveBar:'none',onDirty:()=>{dirty=true;setSaveOv('dirty',box);}});};
         if(!det||det.open)go();else det.addEventListener('toggle',function t(){if(det.open){det.removeEventListener('toggle',t);go();}});}}
     else if(slot)slot.outerHTML='<p class="muted small">Parts lists are not available right now.</p>';
     const grab=()=>{const d=box.querySelector('.ce-miss');if(d)mopen=d.open;};
-    box.querySelectorAll('[data-s]').forEach(x=>x.onclick=()=>{grab();qty=Math.max(minQ,Math.min(999,qty+(+x.dataset.s)));armed=false;draw();});
+    const markDirty=()=>{dirty=true;setSaveOv('dirty',box);};
+    box.querySelectorAll('[data-s]').forEach(x=>x.onclick=()=>{grab();qty=Math.max(minQ,Math.min(999,qty+(+x.dataset.s)));armed=false;draw();markDirty();});
     const co=box.querySelector('[data-clrold]');if(co)co.onclick=()=>{grab();mn=0;mnote='';setMiss(kind,id,{n:0,note:''});draw();try{decorate();}catch(e){}};
-    box.querySelectorAll('.ce-conds button').forEach(x=>x.onclick=()=>{grab();cond=x.dataset.c;if(/incomplete/i.test(cond))mopen=true;armed=false;draw();});
+    box.querySelectorAll('.ce-conds button').forEach(x=>x.onclick=()=>{grab();cond=x.dataset.c;if(/incomplete/i.test(cond))mopen=true;armed=false;draw();markDirty();});
     const o1=box.querySelector('[data-own1]');if(o1)o1.onclick=()=>{grab();markLoose(id);afterChange(box,info,'Marked as owned (loose ×1).');};
     box.querySelectorAll('[data-open]').forEach(x=>x.onclick=()=>{const k2=x.dataset.open;closePopup();setTimeout(()=>openSet(k2),350);});
     const d=box.querySelector('.ce-miss');if(d)d.addEventListener('toggle',()=>{mopen=d.open;});
-    const sv_=box.querySelector('[data-save]');if(sv_)sv_.onclick=()=>{grab();
+    const commit=()=>{grab();
+      try{const P=PARTS();if(P&&P.flush)P.flush();else if(P&&P._flush)P._flush();}catch(e){}
       const fid=isSet?null:(/^fig-/i.test(id)?id:((typeof figIds==='function'&&figIds(id).fig)||id));
       const infoF=isSet?null:{name:figLabel(id),theme:figThemeOf(fid,/^fig-/i.test(id)?blOf(id):id)};
       if(owns)setMiss(kind,id,{n:mn,note:mnote});
       const prevLoose=loose,prevQ=isSet?now:loose;
       if(qty!==prevQ||cond!==(curCond(kind,id)||DEF[kind])||!owns)setEdit(kind,id,qty,cond,infoF);else refresh();
-      afterChange(box,info,owns?(isSet||qty>=prevLoose?'Saved.':'Saved. Loose copies now ×'+qty+'.'):'Added to your collection.');};
+      dirty=false;
+      const note=owns?(isSet||qty>=prevLoose?'Saved.':'Saved. Loose copies now ×'+qty+'.'):'Added to your collection.';
+      if(owns)setSaveOv('saved',box);else setSaveOv('off');
+      afterChange(box,info,note);};
+    box._commit=commit;
+    const sv_=box.querySelector('[data-save]');if(sv_)sv_.onclick=commit;
+    if(dirty&&owns)setSaveOv('dirty',box);
     const rmb=box.querySelector('[data-rm]');if(rmb)rmb.onclick=()=>{grab();if(!armed){armed=true;draw();return;}
       setEdit(kind,id,0,null);
       if(!isSet&&ins){afterChange(box,info,'Loose copies removed. The ones from your sets stay.');return;}
