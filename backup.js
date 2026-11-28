@@ -123,7 +123,7 @@ function openBackup(){
   const bg=sheet('bk-bg','Back up my collection',`<div class="ce-head">${IC_BACKUP}<h2>Back up my collection</h2></div><div class="ce-pick" style="padding-top:0">
 <p>Saves one file with everything StudScore keeps in this browser, so you can bring it back after clearing your browser or on another device.</p>
 ${sumList(s)}
-<p class="muted small">In the file: loaded files, in-app edits, parts and minifig ticks, missing notes, conditions, value history, your own values, BrickLink and BrickEconomy prices, and display settings. Not in it: the BrickLink parts lists saved for your sets (they download again when needed).</p>
+<p class="muted small">In the file: loaded files, in-app edits, parts and minifig ticks, missing notes, conditions, value history, your own values, BrickLink and BrickEconomy prices, and display settings. Not in it: the BrickLink parts lists saved for your sets (they download again when needed). Restoring a backup replaces value history with whatever is in the file, so a backup made before a "Reset history to start of month" will bring the older checkpoints back.</p>
 <label class="bk-keys"><input type="checkbox" data-bkkeys${haveKeys?'':' disabled'}> <span>Include my BrickLink/BrickEconomy keys${haveKeys?'':' (none saved on this device)'}</span></label>
 <p class="bk-warn" hidden>Anyone who has this file could use your keys. Keep it private.</p>
 <div class="ce-go"><button type="button" class="ce-add" data-bkgo>${IC_BACKUP}Download backup</button></div>
@@ -146,7 +146,8 @@ async function openRestore(text){
 <p>This backup has:</p>${sumList(c.summary,c.file.created)}
 ${c.keys?'<p class="muted small">It includes BrickLink/BrickEconomy keys; they replace the ones on this device.</p>':'<p class="muted small">No keys in this file. Keys already saved on this device stay.</p>'}
 ${c.ignored.length?`<p class="muted small">Skipped ${c.ignored.length} unknown item${c.ignored.length>1?'s':''} in the file.</p>`:''}
-<p>${here?'<b>Replace everything</b> swaps what this browser has now for the backup.':'This browser has no collection yet.'}</p>
+<p>${here?'<b>Replace everything</b> swaps what this browser has now for the backup, including value history.':'This browser has no collection yet.'}</p>
+<p class="muted small">Value history in the file is restored as it was backed up. A backup from before a history reset will bring those older checkpoints back.</p>
 <div class="ce-go"><button type="button" class="ce-add ce-danger bk-replace" data-bkreplace>${IC_RESTORE}Replace everything</button><button type="button" class="ce-ghost" data-bkcancel>Cancel</button></div></div>`);
   bg.querySelector('[data-bkcancel]').onclick=()=>close('bk-bg');
   bg.querySelector('[data-bkreplace]').onclick=()=>{try{restore(c);}catch(e){showErr(e.message);}};
